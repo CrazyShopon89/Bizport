@@ -14,7 +14,7 @@ export enum PaymentStatus {
   OVERDUE = 'Overdue'
 }
 
-export type UserRole = 'Admin' | 'Manager' | 'Team Member';
+export type UserRole = 'Super Admin' | 'Admin' | 'Manager' | 'Team Member';
 
 export interface DataFields {
   statuses: string[];
@@ -29,7 +29,10 @@ export interface User {
   role: UserRole;
   phone?: string;
   avatar?: string;
-  password?: string; // In a real app, this wouldn't be on the client
+  password?: string; // Stored as hash
+  forcePasswordChange?: boolean;
+  failedLoginAttempts?: number;
+  lockUntil?: string; // ISO Date string
 }
 
 export interface CompanySettings {
@@ -52,7 +55,7 @@ export interface SMTPSettings {
   port: string;
   encryption: 'TLS' | 'SSL' | 'None';
   username: string;
-  password: string;
+  password: string; // Stored encrypted/obfuscated
   fromName: string;
   fromEmail: string;
 }

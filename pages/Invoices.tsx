@@ -17,7 +17,7 @@ const Invoices: React.FC = () => {
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const { formatCurrency, settings, user } = useAuth();
   const { addNotification } = useNotification();
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Manager';
+  const isAdmin = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
 
   useEffect(() => {
     loadInvoices();

@@ -18,7 +18,7 @@ const Domains: React.FC = () => {
   const { user, formatCurrency, dataFields } = useAuth();
   const { addNotification } = useNotification();
 
-  const isAdminOrManager = user?.role === 'Admin' || user?.role === 'Manager';
+  const isAdminOrManager = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
 
   useEffect(() => {
     loadDomains();

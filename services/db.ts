@@ -1,4 +1,5 @@
 import { Client, DomainClient, User, CompanySettings, Status, PaymentStatus, Invoice, SMTPSettings, AppNotification, DataFields } from '../types';
+import { SecurityService } from './security';
 
 const STORAGE_KEYS = {
   USERS: 'hm_users_db',
@@ -42,138 +43,21 @@ const DEFAULT_DATA_FIELDS: DataFields = {
   invoiceStatuses: ['Draft', 'Sent', 'Paid', 'Cancelled', 'Not Sent']
 };
 
-const INITIAL_CLIENTS: Client[] = [
-  {
-    id: '1',
-    sl: 1,
-    clientName: 'Acme Corp',
-    website: 'acme.com',
-    validationDate: '2024-01-15',
-    email: 'contact@acme.com',
-    phone: '+1 555-0101',
-    status: 'Active',
-    storageGB: 50,
-    setupDate: '2023-01-15',
-    amount: 1200,
-    invoiceNumber: 'INV-2024-001',
-    invoiceDate: '2024-01-15',
-    paidDate: '2024-01-16',
-    paymentStatus: 'Paid',
-    invoiceStatus: 'Sent',
-    paymentMethod: 'Bank Transfer',
-    nextRenewalDate: '2025-01-15',
-  },
-  {
-    id: '2',
-    sl: 2,
-    clientName: 'Globex Inc',
-    website: 'globex.net',
-    validationDate: '2024-03-10',
-    email: 'admin@globex.net',
-    phone: '+1 555-0202',
-    status: 'Active',
-    storageGB: 100,
-    setupDate: '2022-03-10',
-    amount: 2500,
-    invoiceNumber: 'INV-2024-045',
-    invoiceDate: '2024-03-10',
-    paymentStatus: 'Overdue',
-    invoiceStatus: 'Sent',
-    paymentMethod: 'Credit Card',
-    nextRenewalDate: '2025-03-10',
-  }
-];
-
-const INITIAL_DOMAINS: DomainClient[] = [
-  {
-    id: 'd1',
-    sl: 1,
-    clientName: 'Acme Corp',
-    email: 'contact@acme.com',
-    phone: '+1 555-0101',
-    domainName: 'acme.com',
-    purchaseDate: '2023-01-15',
-    expiryDate: '2025-01-15',
-    amount: 15,
-    paymentMethod: 'Credit Card',
-    paymentStatus: 'Paid',
-    status: 'Active',
-    invoiceNumber: 'INV-DOM-001'
-  },
-  {
-    id: 'd2',
-    sl: 2,
-    clientName: 'Stark Industries',
-    email: 'tony@stark.com',
-    phone: '+1 555-3000',
-    domainName: 'stark.com',
-    purchaseDate: '2022-05-20',
-    expiryDate: '2024-05-20',
-    amount: 25,
-    paymentMethod: 'Bank Transfer',
-    paymentStatus: 'Overdue',
-    status: 'Expired',
-    invoiceNumber: 'INV-DOM-002'
-  }
-];
-
-const INITIAL_INVOICES: Invoice[] = [
-  {
-    id: 'inv_2024_001',
-    invoiceNumber: 'INV-2024-001',
-    clientId: '1',
-    clientName: 'Acme Corp',
-    clientEmail: 'contact@acme.com',
-    issueDate: '2024-01-15',
-    dueDate: '2024-01-15',
-    status: 'Paid',
-    type: 'Hosting Renew',
-    amount: 1200,
-    items: [
-      { description: 'Hosting Renewal - acme.com - Premium Plan', quantity: 1, price: 1200 }
-    ]
-  },
-  {
-    id: 'inv_2024_045',
-    invoiceNumber: 'INV-2024-045',
-    clientId: '2',
-    clientName: 'Globex Inc',
-    clientEmail: 'admin@globex.net',
-    issueDate: '2024-03-10',
-    dueDate: '2024-03-10',
-    status: 'Overdue',
-    type: 'Hosting Renew',
-    amount: 2500,
-    items: [
-      { description: 'Hosting Renewal - globex.net - Enterprise Plan', quantity: 1, price: 2500 }
-    ]
-  }
-];
-
 export const DB = {
   init: () => {
-    // Initialize Users - Super Admin Only
+    // Initialize Users - Start EMPTY. Setup Wizard will populate.
     if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-      const superAdmin: User = {
-        id: 'super-admin',
-        name: 'Super Admin',
-        email: 'superadmin@hostmaster.com',
-        role: 'Admin',
-        phone: '+1 (555) 000-0000',
-        avatar: 'https://ui-avatars.com/api/?name=Super+Admin&background=0f172a&color=fff',
-        password: 'password123'
-      };
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([superAdmin]));
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([]));
     }
     
-    // Initialize Clients
+    // Initialize Clients (Empty or Demo)
     if (!localStorage.getItem(STORAGE_KEYS.CLIENTS)) {
-      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(INITIAL_CLIENTS));
+      localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify([]));
     }
 
     // Initialize Domains
     if (!localStorage.getItem(STORAGE_KEYS.DOMAINS)) {
-      localStorage.setItem(STORAGE_KEYS.DOMAINS, JSON.stringify(INITIAL_DOMAINS));
+      localStorage.setItem(STORAGE_KEYS.DOMAINS, JSON.stringify([]));
     }
 
     // Initialize Settings
@@ -183,7 +67,7 @@ export const DB = {
 
     // Initialize Invoices
     if (!localStorage.getItem(STORAGE_KEYS.INVOICES)) {
-      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(INITIAL_INVOICES));
+      localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
     }
 
     // Initialize SMTP
@@ -215,6 +99,11 @@ export const DB = {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
     } catch { return []; }
+  },
+
+  hasAdmin: (): boolean => {
+    const users = DB.getUsers();
+    return users.some(u => u.role === 'Admin' || u.role === 'Super Admin');
   },
 
   findUser: (email: string): User | undefined => {
@@ -320,8 +209,7 @@ export const DB = {
 
   saveNotification: (notification: AppNotification) => {
     const notifications = DB.getNotifications();
-    notifications.unshift(notification); // Add to top
-    // Limit to 50 notifications
+    notifications.unshift(notification); 
     if (notifications.length > 50) notifications.pop();
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   },
@@ -361,12 +249,22 @@ export const DB = {
   // --- SMTP OPERATIONS ---
   getSMTPSettings: (): SMTPSettings => {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.SMTP) || JSON.stringify(DEFAULT_SMTP));
+      const settings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SMTP) || JSON.stringify(DEFAULT_SMTP));
+      // Decrypt password on retrieval
+      if (settings.password) {
+        settings.password = SecurityService.decryptData(settings.password);
+      }
+      return settings;
     } catch { return DEFAULT_SMTP; }
   },
 
   saveSMTPSettings: (settings: SMTPSettings) => {
-    localStorage.setItem(STORAGE_KEYS.SMTP, JSON.stringify(settings));
+    // Encrypt password before storage
+    const secureSettings = { ...settings };
+    if (secureSettings.password) {
+      secureSettings.password = SecurityService.encryptData(secureSettings.password);
+    }
+    localStorage.setItem(STORAGE_KEYS.SMTP, JSON.stringify(secureSettings));
   },
 
   // --- DATA FIELDS OPERATIONS ---

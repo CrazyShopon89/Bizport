@@ -1,4 +1,4 @@
-import { Invoice, SMTPSettings } from '../types';
+import { Invoice, SMTPSettings, User } from '../types';
 import { DB } from './db';
 
 export const EmailService = {
@@ -13,8 +13,6 @@ export const EmailService = {
 
   /**
    * Simulates sending an invoice via SMTP.
-   * In a real React app, this would make an API call to a backend (Node/Laravel) 
-   * which then uses the SMTP credentials to send the email.
    */
   sendInvoiceEmail: async (invoice: Invoice): Promise<{ success: boolean; message: string }> => {
     const settings = DB.getSMTPSettings();
@@ -51,6 +49,47 @@ export const EmailService = {
         }
 
       }, 2000);
+    });
+  },
+
+  /**
+   * Sends welcome email with credentials to new team members.
+   */
+  sendWelcomeEmail: async (user: User, rawPassword: string): Promise<{ success: boolean; message: string }> => {
+    const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
+    
+    const validation = EmailService.validateSettings(settings);
+    if (!validation.valid) {
+      throw new Error(`SMTP Error: ${validation.error}`);
+    }
+
+    const loginUrl = window.location.origin + '/login';
+
+    return new Promise((resolve, reject) => {
+      setTimeout(() => {
+        console.log(`[SMTP SIMULATION] --- Sending Welcome Email ---`);
+        console.log(`[SMTP SIMULATION] To: ${user.email}`);
+        console.log(`[SMTP SIMULATION] Subject: Welcome to ${companySettings.companyName} Team`);
+        console.log(`[SMTP SIMULATION] Body:
+          Hello ${user.name},
+          
+          You have been invited to join the ${companySettings.companyName} management dashboard.
+          
+          Here are your login credentials:
+          Username: ${user.email}
+          Temporary Password: ${rawPassword}
+          
+          Login here: ${loginUrl}
+          
+          Please change your password immediately after logging in.
+        `);
+        
+        resolve({ 
+          success: true, 
+          message: `Welcome email sent to ${user.email}` 
+        });
+      }, 1500);
     });
   }
 };

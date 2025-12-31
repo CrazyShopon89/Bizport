@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Server } from 'lucide-react';
+import { Server, Lock } from 'lucide-react';
 import { DB } from '../services/db';
+import { useNotification } from '../context/NotificationContext';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -10,6 +11,7 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { addNotification } = useNotification();
   const navigate = useNavigate();
 
   // Ensure DB is init on load
@@ -22,11 +24,19 @@ const Login: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      const success = await login(email, password);
-      if (success) {
-        navigate('/');
+      const result = await login(email, password);
+      if (result.success) {
+        // Retrieve the user to check status immediately after login
+        const loggedInUser = DB.findUser(email);
+        
+        if (loggedInUser && loggedInUser.forcePasswordChange) {
+            addNotification('Security Alert', 'You are using a temporary password. Please change it immediately.', 'system');
+            navigate('/profile');
+        } else {
+            navigate('/');
+        }
       } else {
-        setError('Invalid email or password');
+        setError(result.error || 'Invalid email or password');
       }
     } catch (err) {
       setError('An error occurred during login');
@@ -45,8 +55,8 @@ const Login: React.FC = () => {
           <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-900">
             Sign in to HostMaster
           </h2>
-          <p className="mt-2 text-center text-sm text-slate-600">
-            Or <Link to="/signup" className="font-medium text-primary hover:text-opacity-80">create a new account</Link>
+          <p className="mt-2 text-center text-sm text-slate-500">
+            Secure Admin & Team Access
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -73,7 +83,12 @@ const Login: React.FC = () => {
             </div>
           </div>
 
-          {error && <div className="text-red-500 text-sm text-center">{error}</div>}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded text-sm flex items-start gap-2">
+                <Lock size={16} className="mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+            </div>
+          )}
 
           <div>
             <button
@@ -85,10 +100,8 @@ const Login: React.FC = () => {
             </button>
           </div>
           
-           <div className="text-center text-xs text-slate-400 bg-slate-50 p-3 rounded border border-slate-100">
-              <strong>Super Admin Access:</strong><br/>
-              superadmin@hostmaster.com<br/>
-              password123
+           <div className="text-center text-xs text-slate-400">
+              <p>Public registration is disabled.</p>
            </div>
         </form>
       </div>

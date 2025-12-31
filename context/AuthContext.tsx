@@ -1,51 +1,83 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { User, CompanySettings, DataFields } from '../types';
 import { DB } from '../services/db';
+import { SecurityService } from '../services/security';
 
 interface AuthContextType {
   user: User | null;
   settings: CompanySettings;
   dataFields: DataFields;
-  login: (email: string, pass: string) => Promise<boolean>;
-  signup: (name: string, email: string, pass: string) => Promise<boolean>;
+  login: (email: string, pass: string) => Promise<{success: boolean, error?: string}>;
   logout: () => void;
   updateProfile: (data: Partial<User>) => void;
   updateCompanySettings: (data: Partial<CompanySettings>) => void;
   updateDataFields: (data: DataFields) => void;
-  users: User[]; // exposing all users for Team page
+  users: User[];
   formatCurrency: (amount: number) => string;
-  refreshData: () => void; // method to trigger re-fetch of shared data
+  refreshData: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Session timeout in milliseconds (30 minutes)
+const SESSION_TIMEOUT = 30 * 60 * 1000;
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<CompanySettings>(DB.getSettings());
   const [dataFields, setDataFields] = useState<DataFields>(DB.getDataFields());
+  
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Init DB and load data
   useEffect(() => {
     DB.init();
     refreshData();
-
-    // Check for logged in user
     const storedUser = localStorage.getItem('hm_active_user');
     if (storedUser) {
-      const parsedUser = JSON.parse(storedUser);
-      // Verify user still exists in DB
-      const dbUser = DB.findUser(parsedUser.email);
-      if (dbUser && dbUser.password === parsedUser.password) {
-        setUser(dbUser);
-        applyTheme(DB.getSettings());
-      } else {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        const dbUser = DB.findUser(parsedUser.email);
+        
+        // Ensure user exists and matches stored session state (simplified check)
+        if (dbUser && dbUser.id === parsedUser.id) {
+          setUser(dbUser);
+          applyTheme(DB.getSettings());
+          startSessionTimer();
+        } else {
+          localStorage.removeItem('hm_active_user');
+        }
+      } catch (e) {
         localStorage.removeItem('hm_active_user');
       }
     } else {
        applyTheme(DB.getSettings());
     }
+
+    // Events to reset session timer
+    const resetTimer = () => startSessionTimer();
+    window.addEventListener('mousemove', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    window.addEventListener('click', resetTimer);
+
+    return () => {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+    };
   }, []);
+
+  const startSessionTimer = () => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    if (user) {
+        inactivityTimer.current = setTimeout(() => {
+            console.log("Session timed out due to inactivity");
+            logout();
+        }, SESSION_TIMEOUT);
+    }
+  };
 
   const refreshData = () => {
     setUsers(DB.getUsers());
@@ -60,45 +92,78 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     root.style.setProperty('--font-primary', s.font);
   };
 
-  const login = async (email: string, pass: string): Promise<boolean> => {
-    await new Promise(r => setTimeout(r, 500)); // Fake network delay
+  const login = async (email: string, pass: string): Promise<{success: boolean, error?: string}> => {
+    await new Promise(r => setTimeout(r, 800)); // Fake network delay for security (timing attack mitigation)
+    
     const foundUser = DB.findUser(email);
     
-    if (foundUser && foundUser.password === pass) {
+    if (!foundUser) {
+       // Return generic error for security
+       return { success: false, error: 'Invalid credentials.' };
+    }
+
+    // Check Lockout
+    if (foundUser.lockUntil && new Date(foundUser.lockUntil) > new Date()) {
+        const waitMin = Math.ceil((new Date(foundUser.lockUntil).getTime() - new Date().getTime()) / 60000);
+        return { success: false, error: `Account locked. Try again in ${waitMin} minutes.` };
+    }
+
+    // Verify Password (Check hash)
+    const isValid = SecurityService.verifyPassword(pass, foundUser.password || '');
+    
+    // Fallback for legacy plain text users during migration/dev
+    const isLegacyValid = !isValid && foundUser.password === pass;
+
+    if (isValid || isLegacyValid) {
+      // Success
+      
+      // Reset failed attempts
+      foundUser.failedLoginAttempts = 0;
+      foundUser.lockUntil = undefined;
+      
+      // Migrate legacy password if needed
+      if (isLegacyValid) {
+         foundUser.password = SecurityService.hashPassword(pass);
+      }
+
+      DB.saveUser(foundUser);
       setUser(foundUser);
       localStorage.setItem('hm_active_user', JSON.stringify(foundUser));
-      return true;
+      startSessionTimer();
+      return { success: true };
+    } else {
+      // Failure
+      const attempts = (foundUser.failedLoginAttempts || 0) + 1;
+      foundUser.failedLoginAttempts = attempts;
+      
+      if (attempts >= 5) {
+         const lockTime = new Date();
+         lockTime.setMinutes(lockTime.getMinutes() + 15); // Lock for 15 mins
+         foundUser.lockUntil = lockTime.toISOString();
+         foundUser.failedLoginAttempts = 0; // Reset count so they can try after lock
+         DB.saveUser(foundUser);
+         return { success: false, error: 'Too many failed attempts. Account locked for 15 minutes.' };
+      }
+      
+      DB.saveUser(foundUser);
+      return { success: false, error: 'Invalid credentials.' };
     }
-    return false;
-  };
-
-  const signup = async (name: string, email: string, pass: string): Promise<boolean> => {
-    await new Promise(r => setTimeout(r, 500));
-    if (DB.findUser(email)) return false;
-
-    const newUser: User = {
-      id: `u${Date.now()}`,
-      name,
-      email,
-      role: 'Team Member',
-      password: pass,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`
-    };
-    
-    DB.saveUser(newUser);
-    setUser(newUser);
-    refreshData();
-    localStorage.setItem('hm_active_user', JSON.stringify(newUser));
-    return true;
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('hm_active_user');
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
   };
 
   const updateProfile = (data: Partial<User>) => {
     if (!user) return;
+    
+    // If updating password, hash it
+    if (data.password) {
+        data.password = SecurityService.hashPassword(data.password);
+    }
+    
     const updatedUser = { ...user, ...data };
     
     // Save to DB
@@ -136,7 +201,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       settings, 
       dataFields,
       login, 
-      signup, 
       logout, 
       updateProfile, 
       updateCompanySettings, 

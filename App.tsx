@@ -5,15 +5,16 @@ import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
 import Domains from './pages/Domains';
 import Login from './pages/Login';
-import Signup from './pages/Signup';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Team from './pages/Team';
 import Invoices from './pages/Invoices';
+import Setup from './pages/Setup';
 import NotificationCenter from './components/NotificationCenter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { Menu } from 'lucide-react';
+import { DB } from './services/db';
 
 // Define props interface for ProtectedRoute to resolve children prop error
 interface ProtectedRouteProps {
@@ -26,8 +27,18 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+  // Guard: If no admin exists, force setup
+  if (!DB.hasAdmin()) {
+    return <Navigate to="/setup" replace />;
+  }
+
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Force Password Change Guard
+  if (user.forcePasswordChange && location.pathname !== '/profile') {
+     return <Navigate to="/profile" replace />;
   }
 
   return (
@@ -65,11 +76,22 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   );
 };
 
+// Admin Only Route Wrapper
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { user } = useAuth();
+    if (user?.role !== 'Admin' && user?.role !== 'Super Admin') {
+        return <Navigate to="/" replace />;
+    }
+    return <>{children}</>;
+};
+
 const AppRoutes = () => {
+  const hasAdmin = DB.hasAdmin();
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
+      <Route path="/setup" element={hasAdmin ? <Navigate to="/login" replace /> : <Setup />} />
+      <Route path="/login" element={!hasAdmin ? <Navigate to="/setup" replace /> : <Login />} />
       
       {/* Protected Routes */}
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -78,7 +100,15 @@ const AppRoutes = () => {
       <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
       <Route path="/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+      
+      {/* Admin Only Route */}
+      <Route path="/settings" element={
+          <ProtectedRoute>
+              <AdminRoute>
+                  <Settings />
+              </AdminRoute>
+          </ProtectedRoute>
+      } />
       
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
