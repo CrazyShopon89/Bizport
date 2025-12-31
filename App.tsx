@@ -86,7 +86,10 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const AppRoutes = () => {
-  const hasAdmin = DB.hasAdmin();
+  // Use useAuth hook to ensure the state is reactive. 
+  // DB.hasAdmin() alone is static and might not trigger re-render on navigation if cached.
+  const { users } = useAuth();
+  const hasAdmin = users.some(u => u.role === 'Admin' || u.role === 'Super Admin');
 
   return (
     <Routes>

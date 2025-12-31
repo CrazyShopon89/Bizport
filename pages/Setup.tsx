@@ -1,14 +1,18 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Server, CheckCircle, ArrowRight, Building2, User } from 'lucide-react';
+import { Server, CheckCircle, ArrowRight, Building2, User, Loader2, AlertCircle } from 'lucide-react';
 import { DB } from '../services/db';
 import { User as UserType } from '../types';
 import { SecurityService } from '../services/security';
+import { EmailService } from '../services/emailService';
+import { useAuth } from '../context/AuthContext';
 
 const Setup: React.FC = () => {
   const navigate = useNavigate();
+  const { refreshData } = useAuth();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   
   // Step 1: Admin
   const [adminName, setAdminName] = useState('');
@@ -55,19 +59,48 @@ const Setup: React.FC = () => {
         contactEmail: companyEmail || adminEmail
       });
 
-      // Artificial Delay for UX
-      await new Promise(r => setTimeout(r, 1500));
+      // 3. Trigger context update so AppRoutes knows an admin exists
+      refreshData();
+
+      // 4. Attempt to send Welcome Email (Optional / Best Effort)
+      try {
+        // Note: This might fail if SMTP isn't configured in default DB, 
+        // but we catch it so it doesn't block the setup process.
+        await EmailService.sendWelcomeEmail(superAdmin, adminPassword);
+      } catch (emailError) {
+        console.warn("Setup email skipped (SMTP not configured yet):", emailError);
+      }
+
+      // 5. Success State & Redirect
+      setSuccess(true);
       
-      // Redirect to login
-      navigate('/login');
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
 
     } catch (error) {
       console.error(error);
       alert('Setup failed. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center animate-fade-in-up">
+          <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+             <CheckCircle size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Setup Complete!</h2>
+          <p className="text-slate-500 mb-6">Your Super Admin account has been created. Redirecting you to login...</p>
+          <div className="flex justify-center">
+             <Loader2 size={24} className="animate-spin text-primary" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -196,8 +229,11 @@ const Setup: React.FC = () => {
                      <p className="text-xs text-slate-500 mt-1">Used for outgoing invoices (optional).</p>
                    </div>
                    
-                   <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
-                      You can configure SMTP, Branding, and detailed settings later from the Settings page.
+                   <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-xs text-blue-800 flex items-start gap-2">
+                      <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+                      <div>
+                        <strong>Note:</strong> SMTP is not configured yet. The welcome email will be skipped. You can configure email settings in the dashboard later.
+                      </div>
                    </div>
                 </div>
 
