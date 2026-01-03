@@ -1,74 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNotification } from '../context/NotificationContext';
-import { Shield, Trash2, Mail, Plus, Phone } from 'lucide-react';
-import { DB } from '../services/db';
-import { User } from '../types';
-import InviteTeamModal from '../components/InviteTeamModal';
+import { Shield, Mail, Phone } from 'lucide-react';
 
 const Team: React.FC = () => {
-  const { users, user, refreshData } = useAuth();
-  const { addNotification } = useNotification();
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-
-  const canManage = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
-
-  const handleDeleteUser = (id: string) => {
-    const targetUser = users.find(u => u.id === id);
-    if (!targetUser) return;
-
-    // Prevent self deletion
-    if (id === user?.id) {
-        addNotification('Action Denied', "You cannot delete your own account.", 'system');
-        return;
-    }
-
-    // Protect Super Admin
-    if (targetUser.role === 'Super Admin') {
-        addNotification('Action Denied', "The Super Admin account cannot be deleted.", 'system');
-        return;
-    }
-
-    // Admin deletion rules: Only Super Admin can delete Admin
-    if (targetUser.role === 'Admin' && user?.role !== 'Super Admin') {
-        addNotification('Permission Denied', "Only the Super Admin can delete other Admin accounts.", 'system');
-        return;
-    }
-
-    // Manager can only delete Team Member
-    if (user?.role === 'Manager' && targetUser.role !== 'Team Member') {
-        addNotification('Permission Denied', "Managers can only remove Team Members.", 'system');
-        return;
-    }
-
-    if (window.confirm(`Are you sure you want to remove ${targetUser.name}? This action cannot be undone.`)) {
-      DB.deleteUser(id);
-      refreshData();
-      addNotification('Team Member Removed', `${targetUser.name} has been removed from the team.`, 'team');
-    }
-  };
-
-  const handleSaveMember = (userData: Omit<User, 'id'>) => {
-    if (!canManage) {
-        addNotification('Permission Denied', 'You do not have permission to create users.', 'system');
-        return;
-    }
-
-    if (DB.findUser(userData.email)) {
-      alert('A user with this email already exists.');
-      return;
-    }
-
-    const newUser: User = {
-      ...userData,
-      id: `u${Date.now()}`
-    };
-
-    DB.saveUser(newUser);
-    refreshData();
-    setIsInviteModalOpen(false);
-    addNotification('New Team Member', `${userData.name} has been invited to the team as a ${userData.role}.`, 'team');
-  };
+  const { users, user } = useAuth();
 
   return (
     <div className="p-4 sm:p-6 md:p-8">
@@ -77,15 +12,6 @@ const Team: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900">Team Members</h1>
           <p className="text-slate-500">View your organization's team structure.</p>
         </div>
-        {canManage && (
-          <button 
-            onClick={() => setIsInviteModalOpen(true)}
-            className="bg-primary hover:bg-opacity-90 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors w-full sm:w-auto"
-          >
-            <Plus size={18} />
-            Invite Member
-          </button>
-        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -96,7 +22,6 @@ const Team: React.FC = () => {
                 <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Member</th>
                 <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
                 <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
-                {canManage && <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -139,32 +64,12 @@ const Team: React.FC = () => {
                       )}
                     </div>
                   </td>
-                  {canManage && (
-                    <td className="p-4 text-right">
-                      {/* Do not show delete button for self or Super Admin unless specific conditions met, but handled in function for simpler UI logic here */}
-                      {member.role !== 'Super Admin' && member.id !== user?.id && (
-                         <button 
-                           onClick={() => handleDeleteUser(member.id)}
-                           className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors" 
-                           title="Remove User"
-                         >
-                           <Trash2 size={16} />
-                         </button>
-                      )}
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
-
-      <InviteTeamModal 
-        isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-        onSave={handleSaveMember}
-      />
     </div>
   );
 };

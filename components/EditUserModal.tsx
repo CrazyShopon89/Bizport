@@ -1,70 +1,27 @@
-import React, { useState } from 'react';
-import { X, UserPlus, User, Mail, Phone, Shield, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Save, Shield, User, Mail, Phone } from 'lucide-react';
 import { User as UserType, UserRole, COUNTRY_CODES } from '../types';
-import { EmailService } from '../services/emailService';
-import { useAuth } from '../context/AuthContext';
-import { SecurityService } from '../services/security';
 
-interface InviteTeamModalProps {
+interface EditUserModalProps {
+  user: UserType;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (user: Omit<UserType, 'id'>) => void;
+  onSave: (updatedUser: UserType) => void;
 }
 
-const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSave }) => {
-  const { user } = useAuth();
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    role: 'Team Member' as UserRole
-  });
-  
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ type: 'error' | 'success', message: string } | null>(null);
+const EditUserModal: React.FC<EditUserModalProps> = ({ user, isOpen, onClose, onSave }) => {
+  const [formData, setFormData] = useState(user);
+
+  useEffect(() => {
+    setFormData(user);
+  }, [user]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setStatus(null);
-
-    try {
-      // 1. Generate Secure Password
-      const tempPassword = SecurityService.generateStrongPassword(12);
-
-      // 2. Prepare User Object
-      const newUser: Omit<UserType, 'id'> = {
-        ...formData,
-        password: SecurityService.hashPassword(tempPassword), // Store hash
-        forcePasswordChange: true,
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random&color=fff`,
-        failedLoginAttempts: 0
-      };
-
-      // 3. Send Email via Service
-      // Construct a temporary user object solely for the email service interface
-      const emailUserMock = { ...newUser, id: 'temp' } as UserType;
-      // Note: We send the tempPassword (plain) via email, but store the hash.
-      await EmailService.sendWelcomeEmail(emailUserMock, tempPassword);
-
-      // 4. Save User (Delegate to Parent)
-      onSave(newUser);
-      
-      // 5. Reset and Close
-      setFormData({ name: '', email: '', phone: '', role: 'Team Member' });
-      onClose();
-
-    } catch (error: any) {
-      console.error(error);
-      setStatus({ 
-        type: 'error', 
-        message: error.message || 'Failed to send invite email. Please check SMTP settings.' 
-      });
-    } finally {
-      setLoading(false);
-    }
+    onSave(formData);
+    onClose();
   };
 
   // Logic to split/combine phone number and code
@@ -82,10 +39,6 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
     setFormData({ ...formData, phone: `${code}${number}` });
   };
 
-  // Determine available roles based on current user's role
-  const isSuperAdmin = user?.role === 'Super Admin';
-  const isAdmin = user?.role === 'Admin';
-  
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
@@ -93,27 +46,20 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
              <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-               <UserPlus size={20} className="text-primary"/>
-               Invite Team Member
+               <Shield size={20} className="text-primary"/>
+               Edit User
              </h3>
-             <p className="text-xs text-slate-500">Auto-generates credentials and emails the user.</p>
+             <p className="text-xs text-slate-500">Update role and contact details.</p>
           </div>
-          <button onClick={onClose} disabled={loading} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X size={24} />
           </button>
         </div>
 
         {/* Form Content */}
         <div className="p-6">
-          <form id="invite-team-form" onSubmit={handleSubmit} className="space-y-4">
+          <form id="edit-user-form" onSubmit={handleSubmit} className="space-y-4">
             
-            {status && (
-              <div className={`p-3 rounded-lg text-sm flex items-start gap-2 ${status.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
-                <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-                {status.message}
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
               <div className="relative">
@@ -121,11 +67,9 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                 <input
                   type="text"
                   required
-                  placeholder="John Doe"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
-                  disabled={loading}
                 />
               </div>
             </div>
@@ -137,11 +81,9 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                 <input
                   type="email"
                   required
-                  placeholder="john@company.com"
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
-                  disabled={loading}
                 />
               </div>
             </div>
@@ -153,7 +95,6 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                     value={phoneCode}
                     onChange={(e) => handlePhoneChange(e.target.value, phoneNumber)}
                     className="bg-slate-50 border-r border-slate-300 px-3 py-2 outline-none text-slate-700 text-sm font-medium min-w-[90px]"
-                    disabled={loading}
                   >
                       {COUNTRY_CODES.map(c => (
                           <option key={c.code} value={c.code}>{c.country} {c.code}</option>
@@ -163,11 +104,10 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                       <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <input
                         type="tel"
-                        placeholder="123456789"
                         value={phoneNumber}
                         onChange={(e) => handlePhoneChange(phoneCode, e.target.value)}
                         className="w-full pl-10 pr-4 py-2 outline-none"
-                        disabled={loading}
+                        placeholder="123456789"
                       />
                   </div>
               </div>
@@ -181,17 +121,13 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                   value={formData.role}
                   onChange={(e) => setFormData({...formData, role: e.target.value as UserRole})}
                   className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white appearance-none"
-                  disabled={loading}
                 >
                   <option value="Team Member">Team Member</option>
                   <option value="Manager">Manager</option>
-                  {(isSuperAdmin || isAdmin) && <option value="Admin">Admin</option>}
+                  <option value="Admin">Admin</option>
+                  {/* Super Admin cannot be assigned via this modal usually, or restrict logic in parent */}
                 </select>
               </div>
-            </div>
-
-            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-700">
-               <p><strong>Note:</strong> A strong temporary password will be generated automatically. The user will receive an email with login credentials and will be forced to change their password upon first login.</p>
             </div>
 
           </form>
@@ -202,19 +138,17 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
           <button
             onClick={onClose}
             type="button"
-            disabled={loading}
-            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-white transition-colors disabled:opacity-50"
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-white transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
-            form="invite-team-form"
-            disabled={loading}
-            className="px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors shadow-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+            form="edit-user-form"
+            className="px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors shadow-sm flex items-center gap-2"
           >
-            {loading && <Loader2 size={18} className="animate-spin" />}
-            {loading ? 'Sending Invite...' : 'Send Invite'}
+            <Save size={18} />
+            Save Changes
           </button>
         </div>
       </div>
@@ -222,4 +156,4 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
   );
 };
 
-export default InviteTeamModal;
+export default EditUserModal;

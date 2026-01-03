@@ -1,33 +1,29 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Filter, Download, FileText, Trash2, CheckCircle, Clock, AlertCircle, RefreshCw, Eye, Printer, Tag } from 'lucide-react';
 import { Invoice, PaymentStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
-import { DB } from '../services/db';
 import { InvoiceService } from '../services/invoiceService';
 import InvoiceViewModal from '../components/InvoiceViewModal';
 import { useDebounce } from '../hooks/useDebounce';
 
 const Invoices: React.FC = () => {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const { invoices, updateInvoice, deleteInvoice, refreshData } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300); // 300ms debounce
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [typeFilter, setTypeFilter] = useState<string>('All');
   const [loading, setLoading] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const { formatCurrency, settings, user } = useAuth();
   const { addNotification } = useNotification();
   const isAdmin = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
 
-  useEffect(() => {
-    loadInvoices();
-    // Run auto-generator on mount
-    handleAutoGenerate();
-  }, []);
-
-  const loadInvoices = () => {
-    setInvoices(DB.getInvoices().reverse()); // Newest first
-  };
+  // Sorted list for display
+  const displayInvoices = useMemo(() => {
+    return [...invoices].reverse();
+  }, [invoices]);
 
   const handleAutoGenerate = () => {
     setLoading(true);
@@ -35,8 +31,10 @@ const Invoices: React.FC = () => {
     setTimeout(() => {
         const count = InvoiceService.checkAndGenerateAutoInvoices();
         if (count > 0) {
-            loadInvoices();
+            refreshData(); // Triggers data context reload
             addNotification('Invoices Generated', `${count} renewal invoices were automatically generated.`, 'invoice');
+        } else {
+            addNotification('System', 'No pending renewals found needing invoices.', 'system');
         }
         setLoading(false);
     }, 800);
@@ -45,8 +43,7 @@ const Invoices: React.FC = () => {
   const handleDelete = (id: string) => {
     if (window.confirm('Are you sure you want to delete this invoice?')) {
       const inv = invoices.find(i => i.id === id);
-      DB.deleteInvoice(id);
-      loadInvoices();
+      deleteInvoice(id);
       if (inv) {
         addNotification('Invoice Deleted', `Invoice #${inv.invoiceNumber} has been deleted.`, 'system');
       }
@@ -60,7 +57,32 @@ const Invoices: React.FC = () => {
   const handlePrint = (invoice: Invoice) => {
     InvoiceService.printPDF(invoice, settings);
   };
+
+  const handleStatusChange = (invoice: Invoice, newStatus: string) => {
+      const updatedInvoice = { ...invoice, status: newStatus };
+      updateInvoice(updatedInvoice);
+  };
   
+  // Advanced Filter Logic with Debouncing
+  const filteredInvoices = useMemo(() => {
+    return displayInvoices.filter(inv => {
+      const term = debouncedSearchTerm.toLowerCase().trim();
+      
+      const matchesSearch = 
+        term === '' ||
+        inv.clientName.toLowerCase().includes(term) || 
+        inv.clientEmail.toLowerCase().includes(term) ||
+        inv.invoiceNumber.toLowerCase().includes(term) ||
+        (inv.type && inv.type.toLowerCase().includes(term)) ||
+        inv.status.toLowerCase().includes(term); 
+
+      const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
+      const matchesType = typeFilter === 'All' || inv.type === typeFilter;
+      
+      return matchesSearch && matchesStatus && matchesType;
+    });
+  }, [displayInvoices, debouncedSearchTerm, statusFilter, typeFilter]);
+
   const handleExportCSV = () => {
     const headers = ['Invoice #', 'Client', 'Type', 'Amount', 'Status', 'Issue Date', 'Due Date'];
     
@@ -86,25 +108,6 @@ const Invoices: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   };
-
-  // Advanced Filter Logic with Debouncing
-  const filteredInvoices = useMemo(() => {
-    return invoices.filter(inv => {
-      const term = debouncedSearchTerm.toLowerCase().trim();
-      
-      const matchesSearch = 
-        term === '' ||
-        inv.clientName.toLowerCase().includes(term) || 
-        inv.clientEmail.toLowerCase().includes(term) ||
-        inv.invoiceNumber.toLowerCase().includes(term) ||
-        (inv.type && inv.type.toLowerCase().includes(term)) ||
-        inv.status.toLowerCase().includes(term); 
-
-      const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    });
-  }, [invoices, debouncedSearchTerm, statusFilter]);
 
   const getStatusBadge = (status: string) => {
     const s = status.toLowerCase();
@@ -174,6 +177,18 @@ const Invoices: React.FC = () => {
               <option value="Overdue">Overdue</option>
             </select>
           </div>
+          <div className="relative">
+            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <select 
+              className="w-full sm:w-auto pl-10 pr-8 py-2 border border-slate-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-primary outline-none cursor-pointer"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="All">All Types</option>
+              <option value="Hosting Renew">Hosting</option>
+              <option value="Domain Renew">Domain</option>
+            </select>
+          </div>
         </div>
         <button 
           onClick={handleExportCSV}
@@ -204,7 +219,7 @@ const Invoices: React.FC = () => {
               {filteredInvoices.length === 0 ? (
                 <tr>
                    <td colSpan={8} className="p-8 text-center text-slate-500">
-                      {searchTerm ? 'No invoices match your search.' : 'No invoices found.'}
+                      {searchTerm || statusFilter !== 'All' || typeFilter !== 'All' ? 'No invoices match your search.' : 'No invoices found.'}
                    </td>
                 </tr>
               ) : filteredInvoices.map((inv) => (
@@ -223,7 +238,22 @@ const Invoices: React.FC = () => {
                     {formatCurrency(inv.amount)}
                   </td>
                   <td className="p-4">
-                    {getStatusBadge(inv.status)}
+                    {/* Allow Status Toggle for Admin */}
+                    {isAdmin ? (
+                        <select 
+                            value={inv.status}
+                            onChange={(e) => handleStatusChange(inv, e.target.value)}
+                            className="bg-transparent text-xs font-medium border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-primary cursor-pointer"
+                        >
+                            <option value="Paid">Paid</option>
+                            <option value="Unpaid">Unpaid</option>
+                            <option value="Overdue">Overdue</option>
+                            <option value="Sent">Sent</option>
+                            <option value="Cancelled">Cancelled</option>
+                        </select>
+                    ) : (
+                        getStatusBadge(inv.status)
+                    )}
                   </td>
                   <td className="p-4 text-sm text-slate-600">
                     {inv.issueDate}

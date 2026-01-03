@@ -1,48 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from 'recharts';
-import { DollarSign, Euro, PoundSterling, IndianRupee, JapaneseYen, AlertCircle, CheckCircle, Clock, Globe, ArrowRight, Calendar, TrendingUp } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { DollarSign, Euro, PoundSterling, IndianRupee, JapaneseYen, AlertCircle, CheckCircle, Clock, Globe } from 'lucide-react';
 import StatCard from '../components/StatCard';
-import { DB } from '../services/db';
-import { Status, PaymentStatus, Client, DomainClient, Invoice } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { useNavigate } from 'react-router-dom';
 
 type TimeFilter = 'month' | 'year' | 'all';
 type RevenueTypeFilter = 'all' | 'hosting' | 'domain';
 
 const Dashboard: React.FC = () => {
-  const { user, formatCurrency, settings } = useAuth();
+  const { formatCurrency, settings } = useAuth();
+  const { clients, domains, invoices } = useData();
   const navigate = useNavigate();
-  
-  const [clients, setClients] = useState<Client[]>([]);
-  const [domains, setDomains] = useState<DomainClient[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
   
   const [revTimeFilter, setRevTimeFilter] = useState<TimeFilter>('year');
   const [chartTypeFilter, setChartTypeFilter] = useState<RevenueTypeFilter>('all');
-
-  useEffect(() => {
-    // Initial Load
-    refreshDashboardData();
-
-    // Setup listener for storage changes to auto-update (basic implementation)
-    const handleStorageChange = () => refreshDashboardData();
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Also poll every 5 seconds to catch local updates if not triggered by event
-    const interval = setInterval(refreshDashboardData, 5000);
-
-    return () => {
-        window.removeEventListener('storage', handleStorageChange);
-        clearInterval(interval);
-    };
-  }, []);
-
-  const refreshDashboardData = () => {
-    setClients(DB.getClients());
-    setDomains(DB.getDomains());
-    setInvoices(DB.getInvoices());
-  };
 
   // --- ANALYTICS LOGIC ---
 
@@ -82,8 +55,9 @@ const Dashboard: React.FC = () => {
     };
   }, [clients, domains]);
 
-  // 3. Pending Payments Logic
+  // 3. Pending Payments Logic (Only Unpaid Invoices)
   const pendingStats = useMemo(() => {
+    // Specifically looking for status 'Unpaid' or 'Pending'
     const pendingList = invoices.filter(inv => 
         inv.status === 'Unpaid' || inv.status === 'Pending'
     );
@@ -94,15 +68,14 @@ const Dashboard: React.FC = () => {
   // 4. Overdue Logic
   const overdueStats = useMemo(() => {
     const today = new Date();
-    // Definition: Status is Overdue OR (Status is Unpaid AND Due Date > 30 days ago)
+    // Definition: Status is Overdue OR (Status is Unpaid AND Due Date is Past)
     const overdueList = invoices.filter(inv => {
         if (inv.status === 'Overdue') return true;
         if (inv.status === 'Unpaid') {
             const dueDate = new Date(inv.dueDate);
-            const diffTime = Math.abs(today.getTime() - dueDate.getTime());
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-            // Check if due date is in the past by 30+ days
-            return dueDate < today && diffDays > 30;
+            // Simple check: if due date < today, consider it potentially overdue
+            // The system auto-generates with 'Unpaid', but if date passes it becomes overdue conceptually
+            return dueDate < today;
         }
         return false;
     });
@@ -210,17 +183,17 @@ const Dashboard: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dashboard Overview</h1>
-          <p className="text-slate-500">Real-time business intelligence and analytics.</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard Overview</h1>
+          <p className="text-slate-500 font-medium">Real-time business intelligence and analytics.</p>
         </div>
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-500 bg-white px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
-           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+        <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 shadow-sm">
+           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
            Live Updates
         </div>
       </div>
 
-      {/* 1. Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {/* 1. Summary Cards - Optimized for XL screens (Laptop) and MD (Tablets) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
         
         {/* Total Revenue */}
         <StatCard 
@@ -233,7 +206,7 @@ const Dashboard: React.FC = () => {
           colorClass="bg-blue-100"
           action={
             <select 
-                className="text-xs border-none bg-transparent text-slate-500 focus:ring-0 cursor-pointer font-medium p-0 pr-1"
+                className="text-xs border-none bg-transparent text-slate-500 focus:ring-0 cursor-pointer font-bold p-0 pr-1 outline-none"
                 value={revTimeFilter}
                 onChange={(e) => setRevTimeFilter(e.target.value as TimeFilter)}
             >
@@ -249,10 +222,10 @@ const Dashboard: React.FC = () => {
           label="Active Clients" 
           value={activeStats.total} 
           subValue={`${activeStats.hosting} Hosting • ${activeStats.domains} Domain`}
-          icon={<CheckCircle size={24} className="text-green-600" />}
+          icon={<CheckCircle size={24} className="text-emerald-600" />}
           trend="neutral"
           trendValue="Live Count"
-          colorClass="bg-green-100"
+          colorClass="bg-emerald-100"
         />
 
         {/* Pending Payments */}
@@ -260,43 +233,43 @@ const Dashboard: React.FC = () => {
           label="Pending Payments" 
           value={formatCurrency(pendingStats.amount)}
           subValue={`${pendingStats.count} Pending Invoices`}
-          icon={<Clock size={24} className="text-orange-600" />}
+          icon={<Clock size={24} className="text-amber-600" />}
           trend="down"
           trendValue="Needs Action"
-          colorClass="bg-orange-100"
+          colorClass="bg-amber-100"
         />
 
         {/* Overdue */}
         <StatCard 
-          label="Overdue (>30 Days)" 
+          label="Overdue (Past Due)" 
           value={formatCurrency(overdueStats.amount)}
           subValue={`${overdueStats.count} Overdue Invoices`}
-          icon={<AlertCircle size={24} className="text-red-600" />}
+          icon={<AlertCircle size={24} className="text-rose-600" />}
           trend="up"
           trendValue="Critical"
-          colorClass="bg-red-100"
+          colorClass="bg-rose-100"
         />
       </div>
 
-      {/* 2. Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+      {/* 2. Charts Section - Optimized layout logic */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
         
         {/* Revenue Overview Chart */}
-        <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-center mb-6">
+        <div className="xl:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
             <div>
                 <h3 className="text-lg font-bold text-slate-900">Revenue Trends ({new Date().getFullYear()})</h3>
-                <p className="text-xs text-slate-500">Monthly breakdown of paid invoices</p>
+                <p className="text-xs text-slate-500 font-medium">Monthly breakdown of paid invoices</p>
             </div>
-            <div className="flex bg-slate-100 p-1 rounded-lg">
+            <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
                 {(['all', 'hosting', 'domain'] as const).map(type => (
                     <button
                         key={type}
                         onClick={() => setChartTypeFilter(type)}
-                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                        className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                             chartTypeFilter === type 
-                            ? 'bg-white text-slate-900 shadow-sm' 
-                            : 'text-slate-500 hover:text-slate-700'
+                            ? 'bg-white text-slate-900 shadow-sm border border-slate-100' 
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                         }`}
                     >
                         {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -305,21 +278,22 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
           
-          <div className="h-64 sm:h-80 w-full">
+          <div className="h-72 sm:h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b'}} />
-                <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${settings.currencySymbol}${value}`} tick={{fontSize: 12, fill: '#64748b'}} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 500}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tickFormatter={(value) => `${settings.currencySymbol}${value}`} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 500}} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)', padding: '12px 16px' }}
+                  labelStyle={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}
                 />
                 <Bar 
                     dataKey="amount" 
                     fill={settings.primaryColor} 
-                    radius={[4, 4, 0, 0]} 
+                    radius={[6, 6, 0, 0]} 
                     barSize={32}
                     activeBar={{ fill: settings.secondaryColor }} 
                 />
@@ -329,35 +303,36 @@ const Dashboard: React.FC = () => {
         </div>
 
         {/* Client Status Chart */}
-        <div className="bg-white p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col">
           <h3 className="text-lg font-bold text-slate-900 mb-1">Service Health</h3>
-          <p className="text-xs text-slate-500 mb-6">Combined status of Hosting & Domains</p>
+          <p className="text-xs text-slate-500 mb-6 font-medium">Combined status of Hosting & Domains</p>
           
-          <div className="flex-1 min-h-[200px] relative">
+          <div className="flex-1 min-h-[250px] relative">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={statusDistribution}
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={2}
+                  innerRadius={65}
+                  outerRadius={100}
+                  paddingAngle={4}
                   dataKey="value"
+                  cornerRadius={6}
                 >
                   {statusDistribution.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />
                   ))}
                 </Pie>
                 <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    itemStyle={{ color: '#1e293b', fontWeight: 500 }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                 />
                 <Legend 
                     verticalAlign="bottom" 
                     height={36} 
                     iconType="circle"
-                    formatter={(value, entry: any) => <span className="text-xs font-medium text-slate-600 ml-1">{value} ({entry.payload.value})</span>}
+                    formatter={(value, entry: any) => <span className="text-xs font-semibold text-slate-600 ml-1">{value} ({entry.payload.value})</span>}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -365,8 +340,8 @@ const Dashboard: React.FC = () => {
             {/* Center Text */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
                 <div className="text-center">
-                    <span className="text-2xl font-bold text-slate-800">{clients.length + domains.length}</span>
-                    <p className="text-[10px] text-slate-400 uppercase font-semibold">Total Services</p>
+                    <span className="text-3xl font-extrabold text-slate-800 tracking-tight">{clients.length + domains.length}</span>
+                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider mt-1">Services</p>
                 </div>
             </div>
           </div>
@@ -374,16 +349,16 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* 3. Domain Updates Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           
           {/* Expiring Soon */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-             <div className="p-4 border-b border-slate-100 bg-orange-50/50 flex justify-between items-center">
-                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                    <Clock size={16} className="text-orange-500" />
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+             <div className="p-4 border-b border-slate-50 bg-amber-50/40 flex justify-between items-center backdrop-blur-sm">
+                 <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                    <Clock size={18} className="text-amber-500" />
                     Expiring Soon
                  </h3>
-                 <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">{domainWidgets.expiring.length}</span>
+                 <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">{domainWidgets.expiring.length} ITEMS</span>
              </div>
              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-0">
                 {domainWidgets.expiring.length === 0 ? (
@@ -393,16 +368,16 @@ const Dashboard: React.FC = () => {
                         {domainWidgets.expiring.map(domain => (
                             <div key={domain.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
                                 <div>
-                                    <div className="font-medium text-slate-800 text-sm">{domain.domainName}</div>
+                                    <div className="font-semibold text-slate-800 text-sm mb-0.5">{domain.domainName}</div>
                                     <div className="text-xs text-slate-500">{domain.clientName}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="text-xs font-bold text-orange-600">{domain.expiryDate}</div>
+                                    <div className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md mb-1">{domain.expiryDate}</div>
                                     <button 
                                         onClick={() => navigate('/domains')}
-                                        className="text-[10px] text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="text-[10px] font-semibold text-primary hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
                                     >
-                                        Renew
+                                        Renew Now
                                     </button>
                                 </div>
                             </div>
@@ -413,13 +388,13 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Recently Added */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-             <div className="p-4 border-b border-slate-100 bg-blue-50/50 flex justify-between items-center">
-                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                    <Globe size={16} className="text-blue-500" />
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+             <div className="p-4 border-b border-slate-50 bg-blue-50/40 flex justify-between items-center">
+                 <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                    <Globe size={18} className="text-blue-500" />
                     Recently Added
                  </h3>
-                 <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{domainWidgets.recent.length}</span>
+                 <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">{domainWidgets.recent.length} NEW</span>
              </div>
              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-0">
                 {domainWidgets.recent.length === 0 ? (
@@ -429,15 +404,15 @@ const Dashboard: React.FC = () => {
                          {domainWidgets.recent.map(domain => (
                             <div key={domain.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                                    <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold ring-2 ring-white shadow-sm">
                                         {domain.domainName.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
-                                        <div className="font-medium text-slate-800 text-sm">{domain.domainName}</div>
-                                        <div className="text-xs text-slate-500">Reg: {domain.purchaseDate}</div>
+                                        <div className="font-semibold text-slate-800 text-sm mb-0.5">{domain.domainName}</div>
+                                        <div className="text-xs text-slate-500 font-medium">Reg: {domain.purchaseDate}</div>
                                     </div>
                                 </div>
-                                <div className="text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded">
+                                <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 uppercase tracking-wide">
                                     New
                                 </div>
                             </div>
@@ -448,33 +423,35 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Overdue Alert */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-             <div className="p-4 border-b border-slate-100 bg-red-50/50 flex justify-between items-center">
-                 <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                    <AlertCircle size={16} className="text-red-500" />
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+             <div className="p-4 border-b border-slate-50 bg-rose-50/40 flex justify-between items-center">
+                 <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                    <AlertCircle size={18} className="text-rose-500" />
                     Overdue Renewals
                  </h3>
-                 <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">{domainWidgets.overdueRenewals.length}</span>
+                 <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">{domainWidgets.overdueRenewals.length} ALERT</span>
              </div>
              <div className="max-h-[300px] overflow-y-auto custom-scrollbar p-0">
                 {domainWidgets.overdueRenewals.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 text-sm flex flex-col items-center">
-                        <CheckCircle size={32} className="text-green-400 mb-2 opacity-50" />
-                        <span>All domains are up to date!</span>
+                        <CheckCircle size={40} className="text-emerald-400 mb-3 opacity-50" />
+                        <span className="font-medium">All domains are up to date!</span>
                     </div>
                 ) : (
                     <div className="divide-y divide-slate-50">
                         {domainWidgets.overdueRenewals.map(domain => (
-                            <div key={domain.id} className="p-4 bg-red-50/30 hover:bg-red-50 transition-colors flex justify-between items-center">
+                            <div key={domain.id} className="p-4 bg-rose-50/20 hover:bg-rose-50/50 transition-colors flex justify-between items-center group">
                                 <div>
-                                    <div className="font-medium text-slate-800 text-sm">{domain.domainName}</div>
-                                    <div className="text-xs text-red-500 font-medium">Expired: {domain.expiryDate}</div>
+                                    <div className="font-semibold text-slate-800 text-sm mb-0.5">{domain.domainName}</div>
+                                    <div className="text-xs text-rose-500 font-bold flex items-center gap-1">
+                                        Expired: {domain.expiryDate}
+                                    </div>
                                 </div>
                                 <button 
                                     onClick={() => navigate('/domains')}
-                                    className="text-xs bg-white border border-slate-200 shadow-sm px-3 py-1 rounded hover:text-primary transition-colors"
+                                    className="text-xs bg-white border border-rose-200 shadow-sm px-3 py-1.5 rounded-lg hover:text-white hover:bg-rose-500 transition-all font-medium"
                                 >
-                                    Fix
+                                    Resolve
                                 </button>
                             </div>
                         ))}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, User, Server, CreditCard, Calendar, Download } from 'lucide-react';
-import { Client } from '../types';
+import { X, Save, User, Server, CreditCard, Calendar, Download, AlertCircle } from 'lucide-react';
+import { Client, COUNTRY_CODES } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { InvoiceService } from '../services/invoiceService';
 import { DB } from '../services/db';
@@ -14,17 +14,41 @@ interface EditClientModalProps {
 
 const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClose, onSave }) => {
   const [formData, setFormData] = useState<Client>(client);
+  const [error, setError] = useState<string | null>(null);
   const { settings, dataFields } = useAuth();
 
   useEffect(() => {
     setFormData(client);
+    setError(null);
   }, [client]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Basic Email Validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (formData.email && !emailRegex.test(formData.email)) {
+        setError("Please enter a valid email address.");
+        return;
+    }
+
+    setError(null);
     onSave(formData);
+  };
+
+  const handleDateChange = (field: 'setupDate' | 'nextRenewalDate' | 'invoiceDate' | 'validationDate', value: string) => {
+     let newFormData = { ...formData, [field]: value };
+     
+     // Auto-calculate renewal if setup date changes
+     if (field === 'setupDate') {
+         const settings = DB.getSettings();
+         const period = settings.defaultHostingRenewalPeriod || '1 Year';
+         newFormData.nextRenewalDate = DB.calculateDate(value, period);
+         newFormData.validationDate = DB.calculateDate(value, period);
+     }
+     setFormData(newFormData);
   };
 
   const handleDownloadInvoice = (e: React.MouseEvent) => {
@@ -60,6 +84,21 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
     InvoiceService.downloadPDF(invoiceToDownload, settings);
   };
 
+  // Logic to split/combine phone number and code
+  const splitPhone = (phone: string = '') => {
+    const sortedCodes = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);
+    const found = sortedCodes.find(c => phone.startsWith(c.code));
+    return found 
+      ? { code: found.code, number: phone.slice(found.code.length) } 
+      : { code: '+1', number: phone };
+  };
+
+  const { code: phoneCode, number: phoneNumber } = splitPhone(formData.phone);
+
+  const handlePhoneChange = (code: string, number: string) => {
+    setFormData({ ...formData, phone: `${code}${number}` });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fade-in-up max-h-[90vh] flex flex-col">
@@ -78,6 +117,13 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
         <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
           <form id="edit-client-form" onSubmit={handleSubmit} className="space-y-8">
             
+            {error && (
+              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl border border-red-200 text-sm flex items-center gap-2 shadow-sm">
+                  <AlertCircle size={18} className="flex-shrink-0" />
+                  <span className="font-medium">{error}</span>
+              </div>
+            )}
+
             {/* Section 1: Client Details */}
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
@@ -111,18 +157,35 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                       type="email"
                       required
                       value={formData.email}
-                      onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      onChange={(e) => {
+                          setFormData({...formData, email: e.target.value});
+                          setError(null);
+                      }}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-primary outline-none transition-all ${
+                          error ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-slate-300 focus:border-primary'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
-                    />
+                    <div className="flex rounded-lg border border-slate-300 overflow-hidden focus-within:ring-1 focus-within:ring-primary focus-within:border-primary bg-white">
+                        <select
+                          value={phoneCode}
+                          onChange={(e) => handlePhoneChange(e.target.value, phoneNumber)}
+                          className="bg-slate-50 border-r border-slate-300 px-3 py-2 outline-none text-slate-700 text-sm font-medium min-w-[100px]"
+                        >
+                            {COUNTRY_CODES.map(c => (
+                                <option key={c.code} value={c.code}>{c.country} {c.code}</option>
+                            ))}
+                        </select>
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => handlePhoneChange(phoneCode, e.target.value)}
+                          className="flex-1 px-3 py-2 outline-none"
+                          placeholder="123456789"
+                        />
+                    </div>
                   </div>
                </div>
             </div>
@@ -160,7 +223,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                     <input
                       type="date"
                       value={formData.setupDate}
-                      onChange={(e) => setFormData({...formData, setupDate: e.target.value})}
+                      onChange={(e) => handleDateChange('setupDate', e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
                     />
                   </div>
@@ -170,7 +233,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                       type="date"
                       required
                       value={formData.nextRenewalDate}
-                      onChange={(e) => setFormData({...formData, nextRenewalDate: e.target.value})}
+                      onChange={(e) => handleDateChange('nextRenewalDate', e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none font-medium text-primary"
                     />
                   </div>
@@ -179,7 +242,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                     <input
                       type="date"
                       value={formData.validationDate}
-                      onChange={(e) => setFormData({...formData, validationDate: e.target.value})}
+                      onChange={(e) => handleDateChange('validationDate', e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
                     />
                   </div>
@@ -253,7 +316,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                     <input
                       type="date"
                       value={formData.invoiceDate}
-                      onChange={(e) => setFormData({...formData, invoiceDate: e.target.value})}
+                      onChange={(e) => handleDateChange('invoiceDate', e.target.value)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
                     />
                   </div>

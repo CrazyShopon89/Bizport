@@ -1,6 +1,22 @@
 // Fix: Import React to resolve namespace error for React.ReactNode
 import React from 'react';
 
+export const COUNTRY_CODES = [
+  { code: '+1', country: 'US' },
+  { code: '+44', country: 'UK' },
+  { code: '+91', country: 'IN' },
+  { code: '+880', country: 'BD' },
+  { code: '+61', country: 'AU' },
+  { code: '+81', country: 'JP' },
+  { code: '+49', country: 'DE' },
+  { code: '+33', country: 'FR' },
+  { code: '+971', country: 'UAE' },
+  { code: '+86', country: 'CN' },
+  { code: '+55', country: 'BR' },
+  { code: '+65', country: 'SG' },
+  { code: '+60', country: 'MY' },
+];
+
 export enum Status {
   ACTIVE = 'Active',
   EXPIRED = 'Expired',
@@ -48,6 +64,10 @@ export interface CompanySettings {
   currency: string;
   currencySymbol: string;
   currencyPosition: 'left' | 'right';
+  defaultHostingRenewalPeriod?: string;
+  defaultDomainRenewalPeriod?: string;
+  renewalNotificationDays?: number; // Days before renewal to generate invoice/notification
+  emailSignature?: string; // Custom email signature
 }
 
 export interface SMTPSettings {
@@ -92,11 +112,13 @@ export interface DomainClient {
   registrar?: string;
   purchaseDate: string;
   expiryDate: string;
+  validationDate: string;
   amount: number;
   paymentMethod: string; // Changed to string
   paymentStatus: string; // Changed to string
   status: string; // Changed to string
   invoiceNumber?: string;
+  invoiceDate?: string;
 }
 
 export interface Invoice {

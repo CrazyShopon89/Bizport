@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { DB } from './db';
 import { Client, Invoice, PaymentStatus, CompanySettings } from '../types';
+import { EmailService } from './emailService';
 
 // Helper to load image for PDF
 const loadImage = (url: string): Promise<string | null> => {
@@ -190,10 +191,12 @@ export const InvoiceService = {
   },
 
   /**
-   * Checks for clients with renewals within 30 days and generates invoices if not present.
+   * Checks for clients with renewals within configured days and generates invoices if not present.
    * Returns the number of invoices generated.
+   * Strict Rule: Only generate if status is NOT Paid.
    */
   checkAndGenerateAutoInvoices: (): number => {
+    const settings = DB.getSettings();
     const clients = DB.getClients();
     const domains = DB.getDomains();
     let invoices = DB.getInvoices(); // Get fresh list
@@ -203,21 +206,27 @@ export const InvoiceService = {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Use configured lead time or default to 30 days
+    const leadTime = settings.renewalNotificationDays || 30;
     const futureThreshold = new Date(today);
-    futureThreshold.setDate(today.getDate() + 30);
-
+    futureThreshold.setDate(today.getDate() + leadTime); // Renewals due within X days
+    
+    // Look back to catch missed overdue invoices (e.g. up to 60 days ago)
     const pastThreshold = new Date(today);
-    pastThreshold.setDate(today.getDate() - 30);
+    pastThreshold.setDate(today.getDate() - 60);
 
     // 1. Process Hosting Clients
     clients.forEach(client => {
       if (!client.nextRenewalDate) return;
+      if (client.paymentStatus === 'Paid') return; // Skip if already marked paid
 
       const [y, m, d] = client.nextRenewalDate.split('-').map(Number);
       const renewalDate = new Date(y, m - 1, d); 
 
+      // If renewal is within the window (Past 60 days to Future X days)
       if (renewalDate >= pastThreshold && renewalDate <= futureThreshold) {
         
+        // Strict Check: Do we already have an invoice for this Specific Renewal Date?
         const alreadyInvoiced = invoices.some(inv => 
           inv.clientId === client.id && 
           inv.dueDate === client.nextRenewalDate &&
@@ -234,7 +243,7 @@ export const InvoiceService = {
             clientPhone: client.phone,
             issueDate: new Date().toISOString().split('T')[0],
             dueDate: client.nextRenewalDate,
-            status: PaymentStatus.UNPAID,
+            status: 'Unpaid',
             type: 'Hosting Renew',
             amount: client.amount,
             items: [{
@@ -245,11 +254,15 @@ export const InvoiceService = {
           };
 
           DB.saveInvoice(newInvoice);
+          invoices.push(newInvoice); 
           generatedCount++;
           
           client.invoiceNumber = newInvoice.invoiceNumber;
           client.invoiceDate = newInvoice.issueDate;
-          client.paymentStatus = PaymentStatus.UNPAID;
+          client.paymentStatus = 'Unpaid';
+          if (new Date() > renewalDate) {
+              client.paymentStatus = 'Overdue';
+          }
           DB.saveClient(client);
         }
       }
@@ -258,6 +271,7 @@ export const InvoiceService = {
     // 2. Process Domain Clients
     domains.forEach(domain => {
       if (!domain.expiryDate) return;
+      if (domain.paymentStatus === 'Paid') return;
 
       const [y, m, d] = domain.expiryDate.split('-').map(Number);
       const expiryDate = new Date(y, m - 1, d); 
@@ -280,7 +294,7 @@ export const InvoiceService = {
             clientPhone: domain.phone,
             issueDate: new Date().toISOString().split('T')[0],
             dueDate: domain.expiryDate,
-            status: PaymentStatus.UNPAID,
+            status: 'Unpaid',
             type: 'Domain Renew',
             amount: domain.amount,
             items: [{
@@ -291,16 +305,126 @@ export const InvoiceService = {
           };
 
           DB.saveInvoice(newInvoice);
+          invoices.push(newInvoice);
           generatedCount++;
           
-          // Note: DomainClient interface has invoiceNumber but not invoiceDate/paymentStatus sync in same way as Client if we want full sync, but we update invoiceNumber
           domain.invoiceNumber = newInvoice.invoiceNumber;
+          domain.paymentStatus = 'Unpaid';
+          if (new Date() > expiryDate) {
+              domain.paymentStatus = 'Overdue';
+          }
           DB.saveDomain(domain);
         }
       }
     });
 
     return generatedCount;
+  },
+
+  /**
+   * Automates reminder emails (15, 10, 7, 3 days) and marks overdue items.
+   * Sends to Admin and Team Members.
+   */
+  runAutomatedReminders: async (): Promise<number> => {
+    const clients = DB.getClients();
+    const domains = DB.getDomains();
+    const users = DB.getUsers();
+    
+    // Recipients: All Admins, Managers, and Team Members
+    // In a real app, maybe filter by permissions, but prompt asked for "All relevant team members"
+    const recipients = users.map(u => u.email).filter(Boolean);
+
+    if (recipients.length === 0) return 0;
+
+    let emailsSent = 0;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // Reminder Intervals
+    const intervals = [15, 10, 7, 3];
+
+    // Helper to process reminders
+    const processEntity = async (
+      id: string, 
+      name: string, 
+      targetName: string, 
+      dateStr: string, 
+      status: string, 
+      type: 'hosting' | 'domain',
+      amount: number,
+      updater: (status: string) => void
+    ) => {
+      if (!dateStr) return;
+      if (status === 'Paid') return; // Stop if paid
+
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dueDate = new Date(y, m - 1, d);
+      
+      // Calculate days remaining (Math.ceil to handle partial days correctly)
+      const diffTime = dueDate.getTime() - today.getTime();
+      const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // 1. Check for Overdue
+      if (daysRemaining < 0 && status !== 'Overdue') {
+        // Mark as Overdue
+        updater('Overdue');
+        
+        // Send Overdue Notice (Only once per specific due date)
+        const logKey = `sent_overdue_${type}_${id}_${dateStr}`;
+        if (!localStorage.getItem(logKey)) {
+           await EmailService.sendTeamReminder(
+             recipients,
+             `URGENT: ${type === 'hosting' ? 'Hosting' : 'Domain'} Overdue - ${name}`,
+             `The ${type} service for ${name} (${targetName}) is now OVERDUE.\nDue Date: ${dateStr}\nAmount: ${amount}`
+           );
+           localStorage.setItem(logKey, 'true');
+           emailsSent++;
+        }
+        return; // Don't send standard reminders if overdue
+      }
+
+      // 2. Check for Standard Reminders (15, 10, 7, 3)
+      // We use intervals.includes(daysRemaining) for exact day matches
+      // OR buckets (e.g. 14 days) if we want catch-up, but prompt implies specific schedule.
+      // To ensure reliability if automation runs daily, exact match or small window is best.
+      if (intervals.includes(daysRemaining)) {
+         const logKey = `sent_reminder_${type}_${id}_${dateStr}_${daysRemaining}`;
+         
+         if (!localStorage.getItem(logKey)) {
+             await EmailService.sendTeamReminder(
+               recipients,
+               `Renewal Reminder: ${daysRemaining} Days Left - ${name}`,
+               `The ${type} service for ${name} (${targetName}) expires in ${daysRemaining} days.\nDue Date: ${dateStr}\nStatus: ${status}`
+             );
+             localStorage.setItem(logKey, 'true');
+             emailsSent++;
+         }
+      }
+    };
+
+    // Run for Hosting
+    for (const c of clients) {
+        await processEntity(
+            c.id, c.clientName, c.website, c.nextRenewalDate, c.paymentStatus, 'hosting', c.amount,
+            (newStatus) => { 
+                c.paymentStatus = newStatus;
+                DB.saveClient(c);
+            }
+        );
+    }
+
+    // Run for Domains
+    for (const d of domains) {
+        await processEntity(
+            d.id, d.clientName, d.domainName, d.expiryDate, d.paymentStatus, 'domain', d.amount,
+            (newStatus) => { 
+                d.paymentStatus = newStatus;
+                DB.saveDomain(d);
+            }
+        );
+    }
+
+    return emailsSent;
   },
 
   /**

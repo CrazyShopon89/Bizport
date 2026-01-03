@@ -6,15 +6,14 @@ import Clients from './pages/Clients';
 import Domains from './pages/Domains';
 import Login from './pages/Login';
 import Profile from './pages/Profile';
-import Settings from './pages/Settings';
+import Admin from './pages/Admin';
 import Team from './pages/Team';
 import Invoices from './pages/Invoices';
-import Setup from './pages/Setup';
 import NotificationCenter from './components/NotificationCenter';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { DataProvider } from './context/DataContext';
 import { Menu } from 'lucide-react';
-import { DB } from './services/db';
 
 // Define props interface for ProtectedRoute to resolve children prop error
 interface ProtectedRouteProps {
@@ -26,11 +25,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  // Guard: If no admin exists, force setup
-  if (!DB.hasAdmin()) {
-    return <Navigate to="/setup" replace />;
-  }
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
@@ -45,14 +39,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
-      <main className="flex-1 flex flex-col h-full relative transition-all duration-300 w-full md:ml-64">
+      <main className="flex-1 flex flex-col h-full relative transition-all duration-300 w-full lg:ml-64">
         
         {/* Top Header Bar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-8 shrink-0 z-20">
              <div className="flex items-center gap-4">
+                {/* Hamburger visible on screens smaller than LG (Tablet/Mobile) */}
                 <button 
                   onClick={() => setIsSidebarOpen(true)}
-                  className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
                 >
                   <Menu size={24} />
                 </button>
@@ -86,15 +81,11 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const AppRoutes = () => {
-  // Use useAuth hook to ensure the state is reactive. 
-  // DB.hasAdmin() alone is static and might not trigger re-render on navigation if cached.
-  const { users } = useAuth();
-  const hasAdmin = users.some(u => u.role === 'Admin' || u.role === 'Super Admin');
-
   return (
     <Routes>
-      <Route path="/setup" element={hasAdmin ? <Navigate to="/login" replace /> : <Setup />} />
-      <Route path="/login" element={!hasAdmin ? <Navigate to="/setup" replace /> : <Login />} />
+      {/* Default Routes */}
+      <Route path="/login" element={<Login />} />
+      <Route path="/setup" element={<Navigate to="/login" replace />} />
       
       {/* Protected Routes */}
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -105,14 +96,15 @@ const AppRoutes = () => {
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       
       {/* Admin Only Route */}
-      <Route path="/settings" element={
+      <Route path="/admin" element={
           <ProtectedRoute>
               <AdminRoute>
-                  <Settings />
+                  <Admin />
               </AdminRoute>
           </ProtectedRoute>
       } />
       
+      <Route path="/settings" element={<Navigate to="/admin" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
@@ -122,9 +114,11 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <NotificationProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
+        <DataProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </DataProvider>
       </NotificationProvider>
     </AuthProvider>
   );

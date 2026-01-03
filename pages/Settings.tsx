@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X } from 'lucide-react';
+import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X, Calendar, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { DB } from '../services/db';
-import { SMTPSettings, DataFields } from '../types';
+import { SMTPSettings, DataFields, COUNTRY_CODES } from '../types';
 
-const Settings: React.FC = () => {
+export const SettingsForm: React.FC = () => {
   const { settings, updateCompanySettings, dataFields, updateDataFields, user } = useAuth();
-  const navigate = useNavigate();
   const [formData, setFormData] = useState(settings);
   
   // SMTP State
@@ -22,11 +21,11 @@ const Settings: React.FC = () => {
 
   const [saved, setSaved] = useState(false);
 
+  // Sync state if context updates (e.g. initial load)
   useEffect(() => {
-    if (user && user.role === 'Team Member') {
-      navigate('/');
-    }
-  }, [user, navigate]);
+     setFormData(settings);
+     setFieldsData(dataFields);
+  }, [settings, dataFields]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,15 +102,22 @@ const Settings: React.FC = () => {
     }
   };
 
-  if (!user || user.role === 'Team Member') return null;
+  // Logic to split/combine phone number and code
+  const splitPhone = (phone: string = '') => {
+    const sortedCodes = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);
+    const found = sortedCodes.find(c => phone.startsWith(c.code));
+    return found 
+      ? { code: found.code, number: phone.slice(found.code.length) } 
+      : { code: '+1', number: phone };
+  };
+
+  const { code: phoneCode, number: phoneNumber } = splitPhone(formData.phone || '');
+
+  const handlePhoneChange = (code: string, number: string) => {
+    setFormData({ ...formData, phone: `${code}${number}` });
+  };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto pb-20">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-        <p className="text-slate-500">Manage company details, branding, and system configurations.</p>
-      </div>
-
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Company Information */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -221,12 +227,24 @@ const Settings: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
-              <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
-              />
+              <div className="flex rounded-lg border border-slate-300 overflow-hidden focus-within:ring-1 focus-within:ring-primary focus-within:border-primary">
+                  <select
+                    value={phoneCode}
+                    onChange={(e) => handlePhoneChange(e.target.value, phoneNumber)}
+                    className="bg-slate-50 border-r border-slate-300 px-3 py-2 outline-none text-slate-700 text-sm font-medium min-w-[90px]"
+                  >
+                      {COUNTRY_CODES.map(c => (
+                          <option key={c.code} value={c.code}>{c.country} {c.code}</option>
+                      ))}
+                  </select>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => handlePhoneChange(phoneCode, e.target.value)}
+                    className="flex-1 px-3 py-2 outline-none"
+                    placeholder="123456789"
+                  />
+              </div>
             </div>
 
             <div className="md:col-span-2">
@@ -237,6 +255,69 @@ const Settings: React.FC = () => {
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none resize-none"
               />
+            </div>
+          </div>
+        </section>
+
+        {/* Renewal Defaults */}
+        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <Calendar className="text-slate-500" size={20} />
+            <h2 className="font-semibold text-slate-800">Renewal Configuration</h2>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Default Hosting Renewal Period</label>
+              <select
+                value={formData.defaultHostingRenewalPeriod || '1 Year'}
+                onChange={(e) => setFormData({...formData, defaultHostingRenewalPeriod: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+              >
+                <option value="1 Month">1 Month</option>
+                <option value="3 Months">3 Months</option>
+                <option value="6 Months">6 Months</option>
+                <option value="1 Year">1 Year</option>
+                <option value="2 Years">2 Years</option>
+                <option value="3 Years">3 Years</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1">Automatically extends the renewal date by this amount when marked Paid.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Default Domain Renewal Period</label>
+              <select
+                value={formData.defaultDomainRenewalPeriod || '1 Year'}
+                onChange={(e) => setFormData({...formData, defaultDomainRenewalPeriod: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+              >
+                <option value="1 Year">1 Year</option>
+                <option value="2 Years">2 Years</option>
+                <option value="3 Years">3 Years</option>
+                <option value="5 Years">5 Years</option>
+                <option value="10 Years">10 Years</option>
+              </select>
+              <p className="text-xs text-slate-500 mt-1">Automatically extends the expiry date by this amount when marked Paid.</p>
+            </div>
+            <div className="md:col-span-2 border-t border-slate-100 pt-6 mt-2">
+                <div className="flex items-center gap-2 mb-4">
+                    <Bell className="text-slate-400" size={18} />
+                    <h3 className="text-sm font-medium text-slate-700">Notification & Automation Lead Time</h3>
+                </div>
+                <div className="flex flex-col md:flex-row gap-6 items-start">
+                    <div className="flex-1 w-full">
+                         <label className="block text-sm font-medium text-slate-700 mb-2">Renewal Notification Lead Time (Days)</label>
+                         <input
+                            type="number"
+                            min="1"
+                            max="365"
+                            value={formData.renewalNotificationDays || 30}
+                            onChange={(e) => setFormData({...formData, renewalNotificationDays: Number(e.target.value)})}
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                         />
+                         <p className="text-xs text-slate-500 mt-1">
+                             The system will automatically generate invoices and system notifications this many days before the due date.
+                         </p>
+                    </div>
+                </div>
             </div>
           </div>
         </section>
@@ -551,6 +632,18 @@ const Settings: React.FC = () => {
               />
             </div>
 
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email Signature</label>
+              <textarea
+                rows={4}
+                placeholder="Best regards,&#10;The HostMaster Team"
+                value={formData.emailSignature || ''}
+                onChange={(e) => setFormData({...formData, emailSignature: e.target.value})}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none resize-none"
+              />
+              <p className="text-xs text-slate-500 mt-1">This signature will be appended to all system emails.</p>
+            </div>
+
             <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
                 <h3 className="text-sm font-semibold text-slate-800 mb-4">Authentication</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -599,6 +692,28 @@ const Settings: React.FC = () => {
            </button>
         </div>
       </form>
+  );
+};
+
+const Settings: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user && user.role === 'Team Member') {
+      navigate('/');
+    }
+  }, [user, navigate]);
+
+  if (!user || user.role === 'Team Member') return null;
+
+  return (
+    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto pb-20">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+        <p className="text-slate-500">Manage company details, branding, and system configurations.</p>
+      </div>
+      <SettingsForm />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { Invoice, SMTPSettings, User } from '../types';
+import { Invoice, SMTPSettings, User, Client, DomainClient } from '../types';
 import { DB } from './db';
 
 export const EmailService = {
@@ -16,6 +16,7 @@ export const EmailService = {
    */
   sendInvoiceEmail: async (invoice: Invoice): Promise<{ success: boolean; message: string }> => {
     const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
     
     // Validate configuration first
     const validation = EmailService.validateSettings(settings);
@@ -39,6 +40,15 @@ export const EmailService = {
           console.log(`[SMTP SIMULATION] Authenticating as ${settings.username}...`);
           console.log(`[SMTP SIMULATION] Sending email to ${invoice.clientEmail} from ${settings.fromEmail}...`);
           console.log(`[SMTP SIMULATION] Subject: Invoice #${invoice.invoiceNumber}`);
+          console.log(`[SMTP SIMULATION] Body: 
+            Dear ${invoice.clientName},
+            
+            Please find attached invoice #${invoice.invoiceNumber} for your recent renewal.
+            Amount Due: ${invoice.amount}
+            Due Date: ${invoice.dueDate}
+            
+            ${companySettings.emailSignature || ''}
+          `);
           
           resolve({ 
             success: true, 
@@ -83,6 +93,8 @@ export const EmailService = {
           Login here: ${loginUrl}
           
           Please change your password immediately after logging in.
+
+          ${companySettings.emailSignature || ''}
         `);
         
         resolve({ 
@@ -90,6 +102,80 @@ export const EmailService = {
           message: `Welcome email sent to ${user.email}` 
         });
       }, 1500);
+    });
+  },
+
+  /**
+   * Sends password reset email with temporary credentials.
+   */
+  sendPasswordResetEmail: async (user: User, tempPassword: string): Promise<{ success: boolean; message: string }> => {
+    const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
+
+    // Check basics
+    if (!settings.host) return { success: false, message: 'SMTP not configured' };
+
+    const loginUrl = window.location.origin + '/login';
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.log(`[SMTP SIMULATION] --- Sending Password Reset Email ---`);
+        console.log(`[SMTP SIMULATION] To: ${user.email}`);
+        console.log(`[SMTP SIMULATION] Subject: Password Reset Request`);
+        console.log(`[SMTP SIMULATION] Body:
+          Hello ${user.name},
+          
+          A password reset was requested for your account.
+          
+          Your new Temporary Password: ${tempPassword}
+          
+          Login here: ${loginUrl}
+          
+          You will be required to set a new password upon logging in.
+          
+          ${companySettings.emailSignature || ''}
+        `);
+        
+        resolve({ 
+          success: true, 
+          message: `Reset email sent to ${user.email}` 
+        });
+      }, 1500);
+    });
+  },
+
+  /**
+   * Sends internal reminders to the team about renewals or overdue items.
+   */
+  sendTeamReminder: async (
+    recipients: string[], 
+    subject: string, 
+    details: string
+  ): Promise<{ success: boolean }> => {
+    const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
+
+    // Check basics but don't crash the whole automation loop if SMTP is bad
+    if (!settings.host || recipients.length === 0) return { success: false };
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.log(`[SMTP SIMULATION] --- Sending Internal Team Reminder ---`);
+        console.log(`[SMTP SIMULATION] To: ${recipients.join(', ')}`);
+        console.log(`[SMTP SIMULATION] Subject: [Auto-Reminder] ${subject}`);
+        console.log(`[SMTP SIMULATION] Body:
+          Hello Team,
+
+          This is an automated system reminder.
+
+          ${details}
+
+          Please check the dashboard for more details.
+
+          ${companySettings.emailSignature || ''}
+        `);
+        resolve({ success: true });
+      }, 500); // Fast simulation
     });
   }
 };

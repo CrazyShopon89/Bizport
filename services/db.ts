@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS: CompanySettings = {
   companyName: 'HostMaster Pro',
   logoUrl: '',
   iconUrl: '',
-  contactEmail: 'admin@hostmaster.com',
+  contactEmail: 'abdul.bizcope@gmail.com',
   phone: '+1 (555) 123-4567',
   address: '123 Server Lane, Cloud City, CA 90210',
   primaryColor: '#3b82f6',
@@ -24,7 +24,11 @@ const DEFAULT_SETTINGS: CompanySettings = {
   font: 'Inter',
   currency: 'USD',
   currencySymbol: '$',
-  currencyPosition: 'left'
+  currencyPosition: 'left',
+  defaultHostingRenewalPeriod: '1 Year',
+  defaultDomainRenewalPeriod: '1 Year',
+  renewalNotificationDays: 30,
+  emailSignature: 'Best regards,\nThe HostMaster Team'
 };
 
 const DEFAULT_SMTP: SMTPSettings = {
@@ -45,9 +49,33 @@ const DEFAULT_DATA_FIELDS: DataFields = {
 
 export const DB = {
   init: () => {
-    // Initialize Users - Start EMPTY. Setup Wizard will populate.
-    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([]));
+    // Initialize Users logic to ensure specific Super Admin exists
+    let users: User[] = [];
+    try {
+        const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
+        if (storedUsers) {
+            users = JSON.parse(storedUsers);
+        }
+    } catch { 
+        users = []; 
+    }
+
+    const adminEmail = 'abdul.bizcope@gmail.com';
+    
+    // Check if the requested admin exists
+    if (!users.some(u => u.email === adminEmail)) {
+        const superAdmin: User = {
+            id: 'super_admin_bizcope',
+            name: 'Super Admin',
+            email: adminEmail,
+            role: 'Super Admin',
+            password: SecurityService.hashPassword('Sopon2#$'),
+            avatar: 'https://ui-avatars.com/api/?name=Super+Admin&background=0f172a&color=fff',
+            forcePasswordChange: false,
+            failedLoginAttempts: 0
+        };
+        users.push(superAdmin);
+        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
     }
     
     // Initialize Clients (Empty or Demo)
@@ -92,6 +120,44 @@ export const DB = {
       };
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([welcomeNotification]));
     }
+  },
+
+  // --- UTILITY ---
+  /**
+   * Calculates a future date based on a start date and a period string.
+   * Handles date arithmetic safely using UTC to prevent timezone shifts.
+   * @param startDateStr YYYY-MM-DD string
+   * @param period "1 Year", "1 Month", etc.
+   */
+  calculateDate: (startDateStr: string, period: string): string => {
+    if (!startDateStr) return new Date().toISOString().split('T')[0];
+    
+    // Parse YYYY-MM-DD
+    const [y, m, d] = startDateStr.split('-').map(Number);
+    // Create Date in UTC (Month is 0-indexed)
+    const date = new Date(Date.UTC(y, m - 1, d));
+
+    switch (period) {
+      case '1 Month': date.setUTCMonth(date.getUTCMonth() + 1); break;
+      case '3 Months': date.setUTCMonth(date.getUTCMonth() + 3); break;
+      case '6 Months': date.setUTCMonth(date.getUTCMonth() + 6); break;
+      case '1 Year': date.setUTCFullYear(date.getUTCFullYear() + 1); break;
+      case '2 Years': date.setUTCFullYear(date.getUTCFullYear() + 2); break;
+      case '3 Years': date.setUTCFullYear(date.getUTCFullYear() + 3); break;
+      case '5 Years': date.setUTCFullYear(date.getUTCFullYear() + 5); break;
+      case '10 Years': date.setUTCFullYear(date.getUTCFullYear() + 10); break;
+      default: date.setUTCFullYear(date.getUTCFullYear() + 1); // Default
+    }
+
+    return date.toISOString().split('T')[0];
+  },
+
+  getTodayLocal: (): string => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   },
 
   // --- USER OPERATIONS ---
@@ -238,7 +304,9 @@ export const DB = {
   // --- SETTINGS OPERATIONS ---
   getSettings: (): CompanySettings => {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || JSON.stringify(DEFAULT_SETTINGS));
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || JSON.stringify(DEFAULT_SETTINGS));
+      // Merge with defaults to ensure new fields exist
+      return { ...DEFAULT_SETTINGS, ...stored };
     } catch { return DEFAULT_SETTINGS; }
   },
 

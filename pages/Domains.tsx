@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Filter, Download, Plus, Mail, Edit, Trash2, Globe, Calendar, CreditCard } from 'lucide-react';
-import { DomainClient, Status, PaymentStatus, Invoice } from '../types';
+import { DomainClient, Invoice } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
 import { DB } from '../services/db';
 import AiEmailModal from '../components/AiEmailModal';
@@ -9,7 +10,7 @@ import EditDomainModal from '../components/EditDomainModal';
 import { useDebounce } from '../hooks/useDebounce';
 
 const Domains: React.FC = () => {
-  const [domains, setDomains] = useState<DomainClient[]>([]);
+  const { domains, updateDomain, deleteDomain } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -19,32 +20,6 @@ const Domains: React.FC = () => {
   const { addNotification } = useNotification();
 
   const isAdminOrManager = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
-
-  useEffect(() => {
-    loadDomains();
-  }, []);
-
-  const loadDomains = () => {
-    const data = DB.getDomains();
-    setDomains(data);
-
-    // Check for expiring domains on load
-    checkExpiringDomains(data);
-  };
-
-  const checkExpiringDomains = (data: DomainClient[]) => {
-    const today = new Date();
-    const warningThreshold = new Date();
-    warningThreshold.setDate(today.getDate() + 30); // 30 days warning
-
-    data.forEach(domain => {
-      if (domain.status === 'Active' && new Date(domain.expiryDate) <= warningThreshold) {
-        // This is a simple check. In a real app, we'd check if we already notified.
-        // For this demo, we rely on the "Event-driven" notifs below for actions, 
-        // but this could proactively warn users.
-      }
-    });
-  };
 
   const filteredDomains = useMemo(() => {
     return domains.filter(domain => {
@@ -80,32 +55,12 @@ const Domains: React.FC = () => {
   };
 
   const handleUpdateDomain = (updatedDomain: DomainClient) => {
-    const existing = domains.find(d => d.id === updatedDomain.id);
-    const isCreation = !existing;
-
-    // Auto-renewal logic
-    if (existing) {
-        const wasNotPaid = existing.paymentStatus !== 'Paid';
-        const isNowPaid = updatedDomain.paymentStatus === 'Paid';
-  
-        if (wasNotPaid && isNowPaid) {
-          const previousExpiry = new Date(existing.expiryDate);
-          if (!isNaN(previousExpiry.getTime())) {
-              const newExpiry = new Date(previousExpiry.setFullYear(previousExpiry.getFullYear() + 1));
-              updatedDomain.expiryDate = newExpiry.toISOString().split('T')[0];
-              
-              if (updatedDomain.status === 'Expired') {
-                updatedDomain.status = 'Active';
-              }
-              addNotification('Domain Renewed', `${updatedDomain.domainName} renewed successfully until ${updatedDomain.expiryDate}.`, 'payment');
-          }
-        }
-    }
-
-    DB.saveDomain(updatedDomain);
+    // DataContext handles the syncing logic now
+    updateDomain(updatedDomain);
     
     // Auto-generate Invoice on Creation
-    if (isCreation) {
+    const existing = domains.find(d => d.id === updatedDomain.id);
+    if (!existing) {
       const newInvoice: Invoice = {
         id: `inv_${Date.now()}`,
         invoiceNumber: updatedDomain.invoiceNumber || `INV-DOM-${Date.now().toString().slice(-6)}`,
@@ -114,8 +69,8 @@ const Domains: React.FC = () => {
         clientEmail: updatedDomain.email,
         clientPhone: updatedDomain.phone,
         clientAddress: '',
-        issueDate: updatedDomain.purchaseDate || new Date().toISOString().split('T')[0],
-        dueDate: updatedDomain.purchaseDate || new Date().toISOString().split('T')[0], // Immediate due for purchase
+        issueDate: updatedDomain.purchaseDate || DB.getTodayLocal(),
+        dueDate: updatedDomain.purchaseDate || DB.getTodayLocal(), // Immediate due for purchase
         status: 'Unpaid',
         type: 'Domain Renew',
         amount: updatedDomain.amount,
@@ -129,10 +84,9 @@ const Domains: React.FC = () => {
       addNotification('Invoice Generated', `Invoice #${newInvoice.invoiceNumber} automatically created for new domain client.`, 'invoice');
     }
 
-    loadDomains();
     setEditingDomain(null);
 
-    if (isCreation) {
+    if (!existing) {
        addNotification('New Client Added', `${updatedDomain.clientName} and domain ${updatedDomain.domainName} registered.`, 'hosting');
     } else {
        addNotification('Domain Updated', `Records for ${updatedDomain.domainName} have been updated.`, 'hosting');
@@ -141,13 +95,17 @@ const Domains: React.FC = () => {
 
   const handleDeleteDomain = (domain: DomainClient) => {
     if (window.confirm(`Are you sure you want to remove ${domain.domainName}?`)) {
-      DB.deleteDomain(domain.id);
-      loadDomains();
+      deleteDomain(domain.id);
       addNotification('Domain Removed', `${domain.domainName} was removed from the system.`, 'system');
     }
   };
 
   const handleAddDomain = () => {
+    const settings = DB.getSettings();
+    const period = settings.defaultDomainRenewalPeriod || '1 Year';
+    const today = DB.getTodayLocal();
+    const nextDate = DB.calculateDate(today, period);
+
     const newDomain: DomainClient = {
       id: `d${Date.now()}`,
       sl: domains.length > 0 ? Math.max(...domains.map(d => d.sl)) + 1 : 1,
@@ -155,8 +113,9 @@ const Domains: React.FC = () => {
       email: '',
       phone: '',
       domainName: 'example.com',
-      purchaseDate: new Date().toISOString().split('T')[0],
-      expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+      purchaseDate: today,
+      expiryDate: nextDate,
+      validationDate: nextDate,
       amount: 15, // Default domain price
       paymentMethod: 'Credit Card',
       paymentStatus: 'Unpaid',
@@ -167,7 +126,7 @@ const Domains: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['Sl.', 'Client Name', 'Domain', 'Email', 'Purchase Date', 'Renewal Date', 'Amount', 'Payment Method', 'Payment Status', 'Status'];
+    const headers = ['Sl.', 'Client Name', 'Domain', 'Email', 'Purchase Date', 'Renewal Date', 'Validation Date', 'Amount', 'Payment Method', 'Payment Status', 'Status'];
     
     const csvContent = [
       headers.join(','),
@@ -178,6 +137,7 @@ const Domains: React.FC = () => {
         d.email,
         d.purchaseDate,
         d.expiryDate,
+        d.validationDate,
         d.amount,
         d.paymentMethod,
         d.paymentStatus,
