@@ -1,4 +1,4 @@
-import { Client, DomainClient, User, CompanySettings, Status, PaymentStatus, Invoice, SMTPSettings, AppNotification, DataFields } from '../types';
+import { Client, DomainClient, User, CompanySettings, Status, PaymentStatus, Invoice, SMTPSettings, AppNotification, DataFields, EmailLog, BackupMeta } from '../types';
 import { SecurityService } from './security';
 
 const STORAGE_KEYS = {
@@ -9,7 +9,9 @@ const STORAGE_KEYS = {
   INVOICES: 'hm_invoices_db',
   SMTP: 'hm_smtp_db',
   NOTIFICATIONS: 'hm_notifications_db',
-  DATA_FIELDS: 'hm_data_fields_db'
+  DATA_FIELDS: 'hm_data_fields_db',
+  EMAIL_LOGS: 'hm_email_logs_db',
+  BACKUP_HISTORY: 'hm_backup_history_db'
 };
 
 const DEFAULT_SETTINGS: CompanySettings = {
@@ -19,16 +21,33 @@ const DEFAULT_SETTINGS: CompanySettings = {
   contactEmail: 'abdul.bizcope@gmail.com',
   phone: '+1 (555) 123-4567',
   address: '123 Server Lane, Cloud City, CA 90210',
-  primaryColor: '#3b82f6',
+  
+  // UI Defaults
+  primaryColor: '#4f46e5', // Indigo 600
+  primaryHoverColor: '#4338ca', // Indigo 700
+  disabledColor: '#94a3b8', // Slate 400
   secondaryColor: '#64748b',
-  font: 'Inter',
+  font: 'Plus Jakarta Sans',
+  fontScale: 1,
+  borderRadius: '0.75rem', // 12px (rounded-xl)
+  buttonBorderWidth: '0px',
+
   currency: 'USD',
   currencySymbol: '$',
   currencyPosition: 'left',
   defaultHostingRenewalPeriod: '1 Year',
   defaultDomainRenewalPeriod: '1 Year',
-  renewalNotificationDays: 30,
-  emailSignature: 'Best regards,\nThe HostMaster Team'
+  renewalNotificationDays: 7,
+  emailSignature: 'Best regards,\nThe HostMaster Team',
+  emailProvider: 'simulation',
+  emailJsConfig: {
+    serviceId: '',
+    templateId: '',
+    publicKey: ''
+  },
+  
+  backupSchedule: 'disabled',
+  backupRetentionCount: 5
 };
 
 const DEFAULT_SMTP: SMTPSettings = {
@@ -108,6 +127,16 @@ export const DB = {
       localStorage.setItem(STORAGE_KEYS.DATA_FIELDS, JSON.stringify(DEFAULT_DATA_FIELDS));
     }
 
+    // Initialize Email Logs
+    if (!localStorage.getItem(STORAGE_KEYS.EMAIL_LOGS)) {
+      localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify([]));
+    }
+    
+    // Initialize Backup History
+    if (!localStorage.getItem(STORAGE_KEYS.BACKUP_HISTORY)) {
+      localStorage.setItem(STORAGE_KEYS.BACKUP_HISTORY, JSON.stringify([]));
+    }
+
     // Initialize Notifications
     if (!localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS)) {
       const welcomeNotification: AppNotification = {
@@ -120,6 +149,79 @@ export const DB = {
       };
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([welcomeNotification]));
     }
+  },
+
+  // --- BACKUP & RESTORE ---
+  
+  createBackup: (): string => {
+    const backupData: Record<string, any> = {
+      timestamp: new Date().toISOString(),
+      version: '1.0',
+      data: {}
+    };
+
+    // Only backup critical data tables (excluding large logs)
+    const CRITICAL_KEYS = [
+        STORAGE_KEYS.USERS, STORAGE_KEYS.CLIENTS, 
+        STORAGE_KEYS.DOMAINS, STORAGE_KEYS.SETTINGS, 
+        STORAGE_KEYS.INVOICES, STORAGE_KEYS.DATA_FIELDS
+    ];
+
+    CRITICAL_KEYS.forEach(key => {
+      try {
+        const item = localStorage.getItem(key);
+        if (item) {
+          backupData.data[key] = JSON.parse(item);
+        }
+      } catch (e) {
+        console.error(`Failed to backup key: ${key}`, e);
+      }
+    });
+
+    return JSON.stringify(backupData, null, 2);
+  },
+
+  restoreBackup: (jsonString: string): boolean => {
+    try {
+      const backup = JSON.parse(jsonString);
+      
+      if (!backup.data) throw new Error("Invalid backup format");
+
+      Object.entries(backup.data).forEach(([key, value]) => {
+        // Validate that the key belongs to our app storage keys
+        if (Object.values(STORAGE_KEYS).includes(key as string)) {
+           localStorage.setItem(key, JSON.stringify(value));
+        }
+      });
+      
+      return true;
+    } catch (e) {
+      console.error("Restore failed", e);
+      return false;
+    }
+  },
+  
+  // --- BACKUP HISTORY OPERATIONS ---
+  getBackupHistory: (): BackupMeta[] => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.BACKUP_HISTORY) || '[]');
+    } catch { return []; }
+  },
+
+  saveBackupHistory: (record: BackupMeta) => {
+    const history = DB.getBackupHistory();
+    history.unshift(record); // Newest first
+    
+    // Enforce Retention (Max 20 logs for UI, actual file retention handled by logic)
+    if (history.length > 20) history.pop();
+    
+    localStorage.setItem(STORAGE_KEYS.BACKUP_HISTORY, JSON.stringify(history));
+  },
+  
+  deleteBackupRecord: (id: string) => {
+      let history = DB.getBackupHistory();
+      history = history.filter(b => b.id !== id);
+      localStorage.setItem(STORAGE_KEYS.BACKUP_HISTORY, JSON.stringify(history));
   },
 
   // --- UTILITY ---
@@ -150,6 +252,57 @@ export const DB = {
     }
 
     return date.toISOString().split('T')[0];
+  },
+
+  /**
+   * Calculates the next renewal date based on the current year.
+   * If the start date is in the past (e.g., 2018), it projects it to the current/next cycle.
+   */
+  calculateNextRenewalDate: (startDateStr: string, period: string): string => {
+    if (!startDateStr) return new Date().toISOString().split('T')[0];
+
+    const today = new Date();
+    // Create "Today" as UTC YYYY-MM-DD for fair comparison
+    const nowUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+
+    const [y, m, d] = startDateStr.split('-').map(Number);
+    // Construct start date in UTC
+    const start = new Date(Date.UTC(y, m - 1, d));
+
+    if (start >= nowUTC) {
+        // If setup/purchase date is in future or today, next renewal is Start + Period
+        return DB.calculateDate(startDateStr, period);
+    }
+
+    let nextDate = new Date(start);
+
+    if (period.includes('Year')) {
+        const years = parseInt(period) || 1;
+        const currentYear = nowUTC.getUTCFullYear();
+        
+        // Project to current year
+        nextDate.setUTCFullYear(currentYear);
+        
+        // If projected date is before today, move to next cycle
+        if (nextDate < nowUTC) {
+            nextDate.setUTCFullYear(currentYear + years);
+        }
+    } else if (period.includes('Month')) {
+        const months = parseInt(period) || 1;
+        // Iterate adding months until date is in the future
+        while (nextDate < nowUTC) {
+            nextDate.setUTCMonth(nextDate.getUTCMonth() + months);
+        }
+    } else {
+        // Fallback default 1 year behavior
+        const currentYear = nowUTC.getUTCFullYear();
+        nextDate.setUTCFullYear(currentYear);
+        if (nextDate < nowUTC) {
+            nextDate.setUTCFullYear(currentYear + 1);
+        }
+    }
+
+    return nextDate.toISOString().split('T')[0];
   },
 
   getTodayLocal: (): string => {
@@ -301,12 +454,42 @@ export const DB = {
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   },
 
+  // --- EMAIL LOGS OPERATIONS ---
+  getEmailLogs: (): EmailLog[] => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.EMAIL_LOGS) || '[]');
+    } catch { return []; }
+  },
+
+  saveEmailLog: (log: EmailLog) => {
+    const logs = DB.getEmailLogs();
+    logs.unshift(log); // Add to top
+    if (logs.length > 500) logs.pop(); // Keep last 500
+    localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify(logs));
+  },
+
+  clearEmailLogs: () => {
+    localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify([]));
+  },
+
   // --- SETTINGS OPERATIONS ---
   getSettings: (): CompanySettings => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || JSON.stringify(DEFAULT_SETTINGS));
       // Merge with defaults to ensure new fields exist
-      return { ...DEFAULT_SETTINGS, ...stored };
+      const merged = { ...DEFAULT_SETTINGS, ...stored };
+      // Ensure nested objects like emailJsConfig are merged correctly if missing in storage
+      if (!merged.emailJsConfig) merged.emailJsConfig = DEFAULT_SETTINGS.emailJsConfig;
+      if (!merged.emailProvider) merged.emailProvider = DEFAULT_SETTINGS.emailProvider;
+      
+      // Ensure new UI fields exist if loading from old DB
+      if (!merged.primaryHoverColor) merged.primaryHoverColor = DEFAULT_SETTINGS.primaryHoverColor;
+      if (!merged.disabledColor) merged.disabledColor = DEFAULT_SETTINGS.disabledColor;
+      if (!merged.fontScale) merged.fontScale = DEFAULT_SETTINGS.fontScale;
+      if (!merged.borderRadius) merged.borderRadius = DEFAULT_SETTINGS.borderRadius;
+      if (!merged.buttonBorderWidth) merged.buttonBorderWidth = DEFAULT_SETTINGS.buttonBorderWidth;
+
+      return merged;
     } catch { return DEFAULT_SETTINGS; }
   },
 

@@ -1,5 +1,6 @@
-import { Invoice, SMTPSettings, User, Client, DomainClient } from '../types';
+import { Invoice, SMTPSettings, User, Client, DomainClient, EmailLog } from '../types';
 import { DB } from './db';
+import emailjs from '@emailjs/browser';
 
 export const EmailService = {
   
@@ -11,54 +12,250 @@ export const EmailService = {
     return { valid: true };
   },
 
+  validateEmailJS: (config: { serviceId: string, templateId: string, publicKey: string }): { valid: boolean; error?: string } => {
+    if (!config.serviceId) return { valid: false, error: 'Service ID is required.' };
+    if (!config.templateId) return { valid: false, error: 'Template ID is required.' };
+    if (!config.publicKey) return { valid: false, error: 'Public Key is required.' };
+    return { valid: true };
+  },
+
+  logEmail: (recipient: string, subject: string, status: 'success' | 'failed', provider: 'emailjs' | 'simulation', error?: string) => {
+      const log: EmailLog = {
+          id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          timestamp: new Date().toISOString(),
+          recipient,
+          subject,
+          status,
+          provider,
+          error
+      };
+      DB.saveEmailLog(log);
+  },
+
   /**
-   * Simulates sending an invoice via SMTP.
+   * Sends a test email to verify configuration.
    */
-  sendInvoiceEmail: async (invoice: Invoice): Promise<{ success: boolean; message: string }> => {
+  sendTestEmail: async (toEmail: string): Promise<{ success: boolean; message: string }> => {
     const settings = DB.getSMTPSettings();
     const companySettings = DB.getSettings();
-    
+    const provider = companySettings.emailProvider || 'simulation';
+
+    if (!toEmail) return { success: false, message: 'No recipient email provided.' };
+
+    const subject = `Test Email from ${companySettings.companyName}`;
+    const messageBody = `Success! Your email configuration is working correctly.\n\nProvider: ${provider === 'emailjs' ? 'EmailJS' : 'Simulation Mode'}\nTime: ${new Date().toLocaleString()}`;
+
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        const validation = EmailService.validateEmailJS(config);
+        if (!validation.valid) return { success: false, message: validation.error || 'Invalid Config' };
+
+        try {
+            const templateParams = {
+                to_email: toEmail,
+                to_name: 'Admin',
+                from_name: 'System Test',
+                subject: subject,
+                message: messageBody
+            };
+
+            await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+            EmailService.logEmail(toEmail, subject, 'success', 'emailjs');
+            return { success: true, message: `Test email sent to ${toEmail}` };
+        } catch (error: any) {
+            console.error("EmailJS Error:", error);
+            EmailService.logEmail(toEmail, subject, 'failed', 'emailjs', error.text || error.message);
+            return { success: false, message: `EmailJS Failed: ${error.text || error.message}` };
+        }
+    }
+
+    // --- SIMULATION ---
+    EmailService.logEmail(toEmail, subject, 'success', 'simulation');
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.group('📧 [SMTP SIMULATION] Test Email');
+        console.log(`To: ${toEmail}`);
+        console.log(`Subject: ${subject}`);
+        console.log(`Body: ${messageBody}`);
+        console.groupEnd();
+        resolve({ success: true, message: `[SIMULATION] Test email logged to console (F12).` });
+      }, 1000);
+    });
+  },
+
+  /**
+   * Sends an invoice email via selected provider (Simulation or EmailJS).
+   * Supports PDF attachment via Base64 string.
+   */
+  sendInvoiceEmail: async (invoice: Invoice, attachmentDataUri?: string): Promise<{ success: boolean; message: string }> => {
+    const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
+    const provider = companySettings.emailProvider || 'simulation';
+
+    if (!invoice.clientEmail) {
+      throw new Error("Client email address is missing.");
+    }
+
+    const subject = `Invoice #${invoice.invoiceNumber} - ${companySettings.companyName}`;
+
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        const validation = EmailService.validateEmailJS(config);
+        if (!validation.valid) throw new Error(`EmailJS Config Error: ${validation.error}`);
+
+        try {
+            let emailBody = `
+Dear ${invoice.clientName},
+
+This is a payment reminder for Invoice #${invoice.invoiceNumber}.
+
+INVOICE DETAILS:
+--------------------------------
+Invoice Number: ${invoice.invoiceNumber}
+Amount Due:     ${invoice.amount}
+Due Date:       ${invoice.dueDate}
+Status:         ${invoice.status}
+Service:        ${invoice.items[0]?.description || 'Hosting Services'}
+--------------------------------
+
+Please login to your dashboard or contact us to make a payment.
+
+${companySettings.emailSignature || ''}`;
+
+            const templateParams: Record<string, any> = {
+                to_email: invoice.clientEmail,
+                to_name: invoice.clientName,
+                from_name: settings.fromName || companySettings.companyName,
+                subject: subject,
+                message: emailBody,
+                invoice_number: invoice.invoiceNumber,
+                amount: invoice.amount,
+                due_date: invoice.dueDate
+            };
+
+            // Attach PDF if provided and within size limit
+            if (attachmentDataUri) {
+                // EmailJS Variable Size Limit is approx 50KB.
+                // We enforce a safe limit of 40,000 characters for the attachment variable 
+                // to allow space for other text parameters.
+                if (attachmentDataUri.length > 40000) {
+                    console.warn(`[EmailJS] Attachment too large (${attachmentDataUri.length} chars). Limit is ~40k chars. Sending without attachment.`);
+                    templateParams.message += `\n\n[NOTE: The invoice PDF was too large to attach directly. Please verify the details in your dashboard.]`;
+                } else {
+                    // EmailJS requires raw base64 without the data URI prefix
+                    const base64Content = attachmentDataUri.split(',')[1];
+                    templateParams.content = base64Content;
+                    templateParams.attachment = base64Content; 
+                    templateParams.file_name = `Invoice-${invoice.invoiceNumber}.pdf`;
+                }
+            }
+
+            await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+            EmailService.logEmail(invoice.clientEmail, subject, 'success', 'emailjs');
+            return { success: true, message: `Email sent via EmailJS to ${invoice.clientEmail}` };
+        } catch (error: any) {
+            console.error("EmailJS Error:", error);
+            EmailService.logEmail(invoice.clientEmail, subject, 'failed', 'emailjs', error.text || error.message);
+            throw new Error(`EmailJS Failed: ${error.text || error.message}`);
+        }
+    }
+
+    // --- SIMULATION (CONSOLE) ---
     // Validate configuration first
     const validation = EmailService.validateSettings(settings);
     if (!validation.valid) {
       throw new Error(`Configuration Error: ${validation.error} Please configure SMTP in Settings.`);
     }
 
-    if (!invoice.clientEmail) {
-      throw new Error("Client email address is missing.");
-    }
-
-    // Simulate network delay and sending process
     return new Promise((resolve, reject) => {
       setTimeout(() => {
-        
-        // Randomly simulate a connection error (5% chance) for realism in testing, or always succeed for demo
+        // Randomly simulate a connection error (5% chance) for realism in testing
         const isConnected = true; 
 
         if (isConnected) {
-          console.log(`[SMTP SIMULATION] Connecting to ${settings.host}:${settings.port}...`);
-          console.log(`[SMTP SIMULATION] Authenticating as ${settings.username}...`);
-          console.log(`[SMTP SIMULATION] Sending email to ${invoice.clientEmail} from ${settings.fromEmail}...`);
-          console.log(`[SMTP SIMULATION] Subject: Invoice #${invoice.invoiceNumber}`);
-          console.log(`[SMTP SIMULATION] Body: 
-            Dear ${invoice.clientName},
-            
-            Please find attached invoice #${invoice.invoiceNumber} for your recent renewal.
-            Amount Due: ${invoice.amount}
-            Due Date: ${invoice.dueDate}
-            
-            ${companySettings.emailSignature || ''}
-          `);
+          console.group(`📧 [SMTP SIMULATION] Invoice #${invoice.invoiceNumber}`);
+          console.log(`Connecting to ${settings.host}:${settings.port}...`);
+          console.log(`Sending to: ${invoice.clientEmail}`);
+          console.log(`Subject: ${subject}`);
+          console.log(`Body Preview: Dear ${invoice.clientName}, Please find details below...`);
+          if (attachmentDataUri) {
+              const sizeInKb = Math.round((attachmentDataUri.length * 0.75) / 1024);
+              console.log(`📎 Attachment: Invoice-${invoice.invoiceNumber}.pdf (${sizeInKb} KB)`);
+          }
+          console.groupEnd();
           
+          EmailService.logEmail(invoice.clientEmail, subject, 'success', 'simulation');
           resolve({ 
             success: true, 
-            message: `Invoice #${invoice.invoiceNumber} sent successfully to ${invoice.clientEmail}` 
+            message: `[SIMULATION] Invoice #${invoice.invoiceNumber} sent successfully to ${invoice.clientEmail}` 
           });
         } else {
+          EmailService.logEmail(invoice.clientEmail, subject, 'failed', 'simulation', 'Connection Error');
           reject(new Error("Failed to connect to SMTP server. Check credentials."));
         }
 
       }, 2000);
+    });
+  },
+
+  /**
+   * Sends a generic client email (used by AI Assistant).
+   */
+  sendClientEmail: async (
+    toEmail: string, 
+    toName: string, 
+    subject: string, 
+    messageBody: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const settings = DB.getSMTPSettings();
+    const companySettings = DB.getSettings();
+    const provider = companySettings.emailProvider || 'simulation';
+
+    if (!toEmail) throw new Error("Recipient email is missing.");
+
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        const validation = EmailService.validateEmailJS(config);
+        if (!validation.valid) throw new Error(`EmailJS Config Error: ${validation.error}`);
+
+        try {
+            const templateParams = {
+                to_email: toEmail,
+                to_name: toName,
+                from_name: settings.fromName || companySettings.companyName,
+                subject: subject,
+                message: messageBody
+            };
+
+            await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+            EmailService.logEmail(toEmail, subject, 'success', 'emailjs');
+            return { success: true, message: `Email sent via EmailJS to ${toEmail}` };
+        } catch (error: any) {
+            console.error("EmailJS Error:", error);
+            EmailService.logEmail(toEmail, subject, 'failed', 'emailjs', error.text || error.message);
+            throw new Error(`EmailJS Failed: ${error.text || error.message}`);
+        }
+    }
+
+    // --- SIMULATION ---
+    const validation = EmailService.validateSettings(settings);
+    if (!validation.valid) {
+      throw new Error(`Configuration Error: ${validation.error}`);
+    }
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        console.group(`📧 [SMTP SIMULATION] Client Email`);
+        console.log(`To: ${toEmail}`);
+        console.log(`Subject: ${subject}`);
+        console.log(`Body: ${messageBody.substring(0, 50)}...`);
+        console.groupEnd();
+        EmailService.logEmail(toEmail, subject, 'success', 'simulation');
+        resolve({ success: true, message: `Email sent successfully to ${toEmail}` });
+      }, 1500);
     });
   },
 
@@ -68,35 +265,48 @@ export const EmailService = {
   sendWelcomeEmail: async (user: User, rawPassword: string): Promise<{ success: boolean; message: string }> => {
     const settings = DB.getSMTPSettings();
     const companySettings = DB.getSettings();
+    const provider = companySettings.emailProvider || 'simulation';
+    const subject = `Welcome to ${companySettings.companyName}`;
     
+    const loginUrl = window.location.origin + '/login';
+
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        if (EmailService.validateEmailJS(config).valid) {
+             const templateParams = {
+                to_email: user.email,
+                to_name: user.name,
+                from_name: settings.fromName || companySettings.companyName,
+                subject: subject,
+                message: `You have been invited to the dashboard.\nLogin: ${user.email}\nPassword: ${rawPassword}\nURL: ${loginUrl}`
+            };
+            try {
+                await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+                EmailService.logEmail(user.email, subject, 'success', 'emailjs');
+                return { success: true, message: `Welcome email sent to ${user.email}` };
+            } catch (e: any) {
+                EmailService.logEmail(user.email, subject, 'failed', 'emailjs', e.message);
+                throw e;
+            }
+        }
+    }
+
+    // --- SIMULATION ---
     const validation = EmailService.validateSettings(settings);
     if (!validation.valid) {
       throw new Error(`SMTP Error: ${validation.error}`);
     }
 
-    const loginUrl = window.location.origin + '/login';
-
     return new Promise((resolve, reject) => {
       setTimeout(() => {
-        console.log(`[SMTP SIMULATION] --- Sending Welcome Email ---`);
-        console.log(`[SMTP SIMULATION] To: ${user.email}`);
-        console.log(`[SMTP SIMULATION] Subject: Welcome to ${companySettings.companyName} Team`);
-        console.log(`[SMTP SIMULATION] Body:
-          Hello ${user.name},
-          
-          You have been invited to join the ${companySettings.companyName} management dashboard.
-          
-          Here are your login credentials:
-          Username: ${user.email}
-          Temporary Password: ${rawPassword}
-          
-          Login here: ${loginUrl}
-          
-          Please change your password immediately after logging in.
-
-          ${companySettings.emailSignature || ''}
-        `);
+        console.group(`📧 [SMTP SIMULATION] Welcome Email`);
+        console.log(`To: ${user.email}`);
+        console.log(`Subject: ${subject}`);
+        console.log(`Credentials: ${user.email} / ${rawPassword}`);
+        console.groupEnd();
         
+        EmailService.logEmail(user.email, subject, 'success', 'simulation');
         resolve({ 
           success: true, 
           message: `Welcome email sent to ${user.email}` 
@@ -111,31 +321,44 @@ export const EmailService = {
   sendPasswordResetEmail: async (user: User, tempPassword: string): Promise<{ success: boolean; message: string }> => {
     const settings = DB.getSMTPSettings();
     const companySettings = DB.getSettings();
-
-    // Check basics
-    if (!settings.host) return { success: false, message: 'SMTP not configured' };
+    const provider = companySettings.emailProvider || 'simulation';
+    const subject = 'Password Reset';
 
     const loginUrl = window.location.origin + '/login';
 
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        if (EmailService.validateEmailJS(config).valid) {
+             const templateParams = {
+                to_email: user.email,
+                to_name: user.name,
+                from_name: settings.fromName || companySettings.companyName,
+                subject: subject,
+                message: `Your password has been reset.\nTemp Password: ${tempPassword}\nLogin: ${loginUrl}`
+            };
+            try {
+                await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+                EmailService.logEmail(user.email, subject, 'success', 'emailjs');
+                return { success: true, message: `Reset email sent to ${user.email}` };
+            } catch (e: any) {
+                EmailService.logEmail(user.email, subject, 'failed', 'emailjs', e.message);
+                throw e;
+            }
+        }
+    }
+
+    // --- SIMULATION ---
+    if (!settings.host) return { success: false, message: 'SMTP not configured' };
+
     return new Promise((resolve) => {
       setTimeout(() => {
-        console.log(`[SMTP SIMULATION] --- Sending Password Reset Email ---`);
-        console.log(`[SMTP SIMULATION] To: ${user.email}`);
-        console.log(`[SMTP SIMULATION] Subject: Password Reset Request`);
-        console.log(`[SMTP SIMULATION] Body:
-          Hello ${user.name},
-          
-          A password reset was requested for your account.
-          
-          Your new Temporary Password: ${tempPassword}
-          
-          Login here: ${loginUrl}
-          
-          You will be required to set a new password upon logging in.
-          
-          ${companySettings.emailSignature || ''}
-        `);
+        console.group(`📧 [SMTP SIMULATION] Password Reset`);
+        console.log(`To: ${user.email}`);
+        console.log(`Temp Pass: ${tempPassword}`);
+        console.groupEnd();
         
+        EmailService.logEmail(user.email, subject, 'success', 'simulation');
         resolve({ 
           success: true, 
           message: `Reset email sent to ${user.email}` 
@@ -154,28 +377,51 @@ export const EmailService = {
   ): Promise<{ success: boolean }> => {
     const settings = DB.getSMTPSettings();
     const companySettings = DB.getSettings();
+    const provider = companySettings.emailProvider || 'simulation';
+    
+    // Flatten recipients for log if simulation, or send individually for real?
+    // Here we treat them as a batch.
+    const recipientsStr = recipients.join(',');
 
-    // Check basics but don't crash the whole automation loop if SMTP is bad
+    // --- REAL EMAIL (EMAILJS) ---
+    if (provider === 'emailjs') {
+        const config = companySettings.emailJsConfig;
+        
+        if (EmailService.validateEmailJS(config).valid) {
+             const templateParams = {
+                to_email: recipientsStr, 
+                to_name: 'Team',
+                from_name: 'System Bot',
+                subject: subject,
+                message: details
+            };
+
+            try {
+                await emailjs.send(config.serviceId, config.templateId, templateParams, config.publicKey);
+                EmailService.logEmail(recipientsStr, subject, 'success', 'emailjs');
+                return { success: true };
+            } catch (e: any) {
+                console.error("Background EmailJS Error:", e);
+                EmailService.logEmail(recipientsStr, subject, 'failed', 'emailjs', e.message);
+                return { success: false };
+            }
+        }
+        return { success: false };
+    }
+
+    // --- SIMULATION ---
     if (!settings.host || recipients.length === 0) return { success: false };
 
     return new Promise((resolve) => {
       setTimeout(() => {
-        console.log(`[SMTP SIMULATION] --- Sending Internal Team Reminder ---`);
-        console.log(`[SMTP SIMULATION] To: ${recipients.join(', ')}`);
-        console.log(`[SMTP SIMULATION] Subject: [Auto-Reminder] ${subject}`);
-        console.log(`[SMTP SIMULATION] Body:
-          Hello Team,
-
-          This is an automated system reminder.
-
-          ${details}
-
-          Please check the dashboard for more details.
-
-          ${companySettings.emailSignature || ''}
-        `);
+        console.group(`📧 [SMTP SIMULATION] Team Auto-Reminder`);
+        console.log(`Recipients: ${recipientsStr}`);
+        console.log(`Subject: ${subject}`);
+        console.log(`Details: ${details.substring(0, 50)}...`);
+        console.groupEnd();
+        EmailService.logEmail(recipientsStr, subject, 'success', 'simulation');
         resolve({ success: true });
-      }, 500); // Fast simulation
+      }, 500); 
     });
   }
 };

@@ -6,6 +6,7 @@ import { User as UserType } from '../types';
 import { SecurityService } from '../services/security';
 import { EmailService } from '../services/emailService';
 import { useAuth } from '../context/AuthContext';
+import SuccessAnimation from '../components/SuccessAnimation';
 
 const Setup: React.FC = () => {
   const navigate = useNavigate();
@@ -89,8 +90,8 @@ const Setup: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center animate-fade-in-up">
-          <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-             <CheckCircle size={32} />
+          <div className="mb-6 flex justify-center">
+             <SuccessAnimation size={64} />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Setup Complete!</h2>
           <p className="text-slate-500 mb-6">Your Super Admin account has been created. Redirecting you to login...</p>

@@ -136,15 +136,15 @@ const Profile: React.FC = () => {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6 sm:space-y-8">
           
           {/* Avatar Section */}
-          <div className="flex flex-col sm:flex-row items-center gap-8 border-b border-slate-100 pb-8">
-            <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+          <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 border-b border-slate-100 pb-8">
+            <div className="relative group cursor-pointer shrink-0" onClick={handleAvatarClick}>
               <img 
                 src={formData.avatar || `https://ui-avatars.com/api/?name=${formData.name}`} 
                 alt="Profile" 
-                className="w-32 h-32 rounded-full object-cover border-4 border-slate-50 shadow-sm"
+                className="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-slate-50 shadow-sm"
               />
               <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[2px]">
                 <Camera className="text-white" size={32} />
@@ -245,13 +245,13 @@ const Profile: React.FC = () => {
             </div>
           </div>
 
-          <div className="pt-4 flex items-center justify-between border-t border-slate-100">
-             <div className="text-sm text-green-600 font-medium h-6">
-               {saved && "Profile updated successfully!"}
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-100">
+             <div className={`text-sm text-green-600 font-medium h-6 transition-opacity ${saved ? 'opacity-100' : 'opacity-0'}`}>
+               Profile updated successfully!
              </div>
             <button
               type="submit"
-              className="px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors"
+              className="w-full sm:w-auto px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors"
             >
               Save Changes
             </button>

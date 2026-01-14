@@ -51,6 +51,14 @@ export interface User {
   lockUntil?: string; // ISO Date string
 }
 
+export type EmailProvider = 'simulation' | 'emailjs';
+
+export interface EmailJSConfig {
+  serviceId: string;
+  templateId: string;
+  publicKey: string;
+}
+
 export interface CompanySettings {
   companyName: string;
   logoUrl: string;
@@ -58,9 +66,19 @@ export interface CompanySettings {
   contactEmail: string;
   phone: string;
   address: string;
+  
+  // Branding
   primaryColor: string;
+  primaryHoverColor?: string; // New
+  disabledColor?: string; // New
   secondaryColor: string;
+  
+  // Typography & UI
   font: string;
+  fontScale?: number; // New (1.0 = 16px)
+  borderRadius?: string; // New (e.g. '0.5rem')
+  buttonBorderWidth?: string; // New (e.g. '1px')
+  
   currency: string;
   currencySymbol: string;
   currencyPosition: 'left' | 'right';
@@ -68,6 +86,12 @@ export interface CompanySettings {
   defaultDomainRenewalPeriod?: string;
   renewalNotificationDays?: number; // Days before renewal to generate invoice/notification
   emailSignature?: string; // Custom email signature
+  emailProvider: EmailProvider;
+  emailJsConfig: EmailJSConfig;
+  
+  // Backup Config
+  backupSchedule?: 'daily' | 'weekly' | 'monthly' | 'disabled';
+  backupRetentionCount?: number;
 }
 
 export interface SMTPSettings {
@@ -100,6 +124,7 @@ export interface Client {
   invoiceStatus: string; // Changed to string
   paymentMethod: string; // Changed to string
   nextRenewalDate: string;
+  renewalPeriod?: string; // Specific renewal period for this client
 }
 
 export interface DomainClient {
@@ -153,7 +178,28 @@ export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  type: 'system' | 'invoice' | 'payment' | 'hosting' | 'profile' | 'team';
+  type: 'system' | 'invoice' | 'payment' | 'hosting' | 'profile' | 'team' | 'backup';
   timestamp: string;
   isRead: boolean;
+}
+
+export interface EmailLog {
+  id: string;
+  timestamp: string;
+  recipient: string;
+  subject: string;
+  status: 'success' | 'failed';
+  provider: 'emailjs' | 'simulation';
+  error?: string;
+}
+
+export interface BackupMeta {
+  id: string;
+  filename: string;
+  sizeMB: string;
+  created: string; // ISO
+  type: 'Manual' | 'Daily' | 'Weekly' | 'Monthly';
+  status: 'Completed' | 'Failed';
+  location: string;
+  checksum: string; // Integrity hash simulation
 }

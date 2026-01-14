@@ -6,6 +6,7 @@ import { useData } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
 import { InvoiceService } from '../services/invoiceService';
 import InvoiceViewModal from '../components/InvoiceViewModal';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { useDebounce } from '../hooks/useDebounce';
 
 const Invoices: React.FC = () => {
@@ -16,6 +17,7 @@ const Invoices: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [loading, setLoading] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{isOpen: boolean, invoice: Invoice | null}>({ isOpen: false, invoice: null });
   const { formatCurrency, settings, user } = useAuth();
   const { addNotification } = useNotification();
   const isAdmin = ['Super Admin', 'Admin', 'Manager'].includes(user?.role || '');
@@ -40,13 +42,15 @@ const Invoices: React.FC = () => {
     }, 800);
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this invoice?')) {
-      const inv = invoices.find(i => i.id === id);
-      deleteInvoice(id);
-      if (inv) {
-        addNotification('Invoice Deleted', `Invoice #${inv.invoiceNumber} has been deleted.`, 'system');
-      }
+  const confirmDeleteInvoice = (invoice: Invoice) => {
+    setDeleteConfirmation({ isOpen: true, invoice });
+  };
+
+  const handleExecuteDelete = () => {
+    if (deleteConfirmation.invoice) {
+      deleteInvoice(deleteConfirmation.invoice.id);
+      addNotification('Invoice Deleted', `Invoice #${deleteConfirmation.invoice.invoiceNumber} has been deleted.`, 'system');
+      setDeleteConfirmation({ isOpen: false, invoice: null });
     }
   };
 
@@ -131,7 +135,7 @@ const Invoices: React.FC = () => {
   };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 h-full flex flex-col">
+    <div className="p-4 lg:p-6 h-full flex flex-col">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
@@ -205,14 +209,14 @@ const Invoices: React.FC = () => {
           <table className="w-full text-left border-collapse">
             <thead className="bg-slate-50 sticky top-0 z-10">
               <tr>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Invoice #</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Client</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Type</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Amount</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Status</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Issue Date</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Due Date</th>
-                <th className="p-4 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 text-right">Actions</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Invoice #</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Client</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Type</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Amount</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Status</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Issue Date</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">Due Date</th>
+                <th className="p-3 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -224,20 +228,20 @@ const Invoices: React.FC = () => {
                 </tr>
               ) : filteredInvoices.map((inv) => (
                 <tr key={inv.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="p-4 font-mono text-sm font-medium text-slate-700">
+                  <td className="p-3 font-mono text-sm font-medium text-slate-700">
                     {inv.invoiceNumber}
                   </td>
-                  <td className="p-4">
+                  <td className="p-3">
                     <div className="font-medium text-slate-900">{inv.clientName}</div>
                     <div className="text-xs text-slate-400">{inv.clientEmail}</div>
                   </td>
-                  <td className="p-4">
+                  <td className="p-3">
                      {getTypeBadge(inv.type || 'Hosting Renew')}
                   </td>
-                  <td className="p-4 text-sm font-medium text-slate-900">
+                  <td className="p-3 text-sm font-medium text-slate-900">
                     {formatCurrency(inv.amount)}
                   </td>
-                  <td className="p-4">
+                  <td className="p-3">
                     {/* Allow Status Toggle for Admin */}
                     {isAdmin ? (
                         <select 
@@ -255,31 +259,31 @@ const Invoices: React.FC = () => {
                         getStatusBadge(inv.status)
                     )}
                   </td>
-                  <td className="p-4 text-sm text-slate-600">
+                  <td className="p-3 text-sm text-slate-600">
                     {inv.issueDate}
                   </td>
-                  <td className="p-4 text-sm text-slate-600">
+                  <td className="p-3 text-sm text-slate-600">
                     {inv.dueDate}
                   </td>
-                  <td className="p-4 text-right">
+                  <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                        <button 
                          onClick={() => setViewInvoice(inv)}
-                         className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg tooltip"
+                         className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg tooltip"
                          title="View Invoice"
                        >
                          <Eye size={16} />
                        </button>
                        <button 
                          onClick={() => handleDownload(inv)}
-                         className="p-2 text-primary hover:bg-indigo-50 rounded-lg tooltip"
+                         className="p-1.5 text-primary hover:bg-indigo-50 rounded-lg tooltip"
                          title="Download PDF"
                        >
                          <Download size={16} />
                        </button>
                        <button 
                          onClick={() => handlePrint(inv)}
-                         className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg tooltip"
+                         className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg tooltip"
                          title="Print Invoice"
                        >
                          <Printer size={16} />
@@ -287,8 +291,8 @@ const Invoices: React.FC = () => {
                       
                       {isAdmin && (
                         <button 
-                          onClick={() => handleDelete(inv.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                          onClick={() => confirmDeleteInvoice(inv)}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
                           title="Delete Invoice"
                         >
                           <Trash2 size={16} />
@@ -310,6 +314,15 @@ const Invoices: React.FC = () => {
           onClose={() => setViewInvoice(null)} 
         />
       )}
+      <ConfirmationModal
+        isOpen={deleteConfirmation.isOpen}
+        title="Delete Invoice"
+        message={`Are you sure you want to delete invoice #${deleteConfirmation.invoice?.invoiceNumber}? This action cannot be undone.`}
+        confirmLabel="Delete Invoice"
+        isDangerous={true}
+        onConfirm={handleExecuteDelete}
+        onCancel={() => setDeleteConfirmation({ isOpen: false, invoice: null })}
+      />
     </div>
   );
 };

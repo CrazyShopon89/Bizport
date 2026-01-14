@@ -3,8 +3,8 @@ import { DB } from './db';
 import { Client, Invoice, PaymentStatus, CompanySettings } from '../types';
 import { EmailService } from './emailService';
 
-// Helper to load image for PDF
-const loadImage = (url: string): Promise<string | null> => {
+// Helper to load and compress image for PDF
+const loadImage = (url: string): Promise<{ data: string; width: number; height: number } | null> => {
   return new Promise((resolve) => {
     if (!url) { resolve(null); return; }
     
@@ -14,16 +14,34 @@ const loadImage = (url: string): Promise<string | null> => {
     
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      // Increased max size for better quality logos
+      const MAX_SIZE = 800;
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > height) {
+        if (width > MAX_SIZE) {
+          height *= MAX_SIZE / width;
+          width = MAX_SIZE;
+        }
+      } else {
+        if (height > MAX_SIZE) {
+          width *= MAX_SIZE / height;
+          height = MAX_SIZE;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      
       const ctx = canvas.getContext('2d');
       if (!ctx) { resolve(null); return; }
-      ctx.drawImage(img, 0, 0);
+      
+      ctx.drawImage(img, 0, 0, width, height);
       try {
         const dataURL = canvas.toDataURL('image/png');
-        resolve(dataURL);
+        resolve({ data: dataURL, width, height });
       } catch (e) {
-        // Tainted canvas or other error
         resolve(null);
       }
     };
@@ -35,144 +53,176 @@ const loadImage = (url: string): Promise<string | null> => {
 };
 
 const generatePdfDoc = async (invoice: Invoice, settings: CompanySettings) => {
-  const doc = new jsPDF();
-  const margin = 20;
-  let y = 20;
+  const doc = new jsPDF({ compress: true });
+  const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+  const margin = 15;
+  const primaryColor = settings.primaryColor || '#4f46e5'; 
   
-  // Capture start Y for absolute positioning of right-side elements
-  const topY = y;
-
   // -- Header --
-  
-  // 1. Logo (Top Left)
+  doc.setFillColor(primaryColor);
+  doc.rect(0, 0, pageWidth, 40, 'F');
+
   if (settings.logoUrl) {
-      const logoData = await loadImage(settings.logoUrl);
-      if (logoData) {
-          const logoSize = 20;
-          doc.addImage(logoData, 'PNG', margin, y, logoSize, logoSize); 
-          y += logoSize + 5; // Move Y down below logo
+      const logo = await loadImage(settings.logoUrl);
+      if (logo) {
+          // Calculate Aspect Ratio to fit within 80mm x 26mm box
+          const maxHeight = 26; 
+          const maxWidth = 80;
+          const ratio = logo.width / logo.height;
+          
+          let pdfH = maxHeight;
+          let pdfW = pdfH * ratio;
+          
+          // Constrain Width if needed
+          if (pdfW > maxWidth) {
+              pdfW = maxWidth;
+              pdfH = pdfW / ratio;
+          }
+          
+          // Vertically center in the 40mm header (approx y=7 to y=33)
+          const y = (40 - pdfH) / 2;
+          
+          doc.addImage(logo.data, 'PNG', margin, y, pdfW, pdfH);
+      } else {
+          // Fallback if logo fails to load: Show Text
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(22);
+          doc.setTextColor(255, 255, 255);
+          doc.text(settings.companyName, margin, 26);
       }
+  } else {
+      // No Logo: Show Text
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.setTextColor(255, 255, 255);
+      doc.text(settings.companyName, margin, 26);
   }
 
-  // 2. Company Info (Below Logo)
-  doc.setFontSize(16);
+  // Invoice Title on Right
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(50, 50, 50);
-  doc.text(settings.companyName, margin, y + 5); 
-  
-  y += 12; // Space after Company Name
-  
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
+  doc.setFontSize(30);
+  doc.setTextColor(255, 255, 255);
+  doc.text("INVOICE", pageWidth - margin, 28, { align: 'right' });
+
+  // -- Info --
+  let y = 55;
+  doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
-  doc.text(settings.address, margin, y);
-  doc.text(settings.contactEmail, margin, y + 5);
-  doc.text(settings.phone, margin, y + 10);
-  
-  // Track bottom of left header
-  y += 20;
-
-  // 3. INVOICE Title (Right aligned - fixed at top)
-  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(settings.primaryColor);
-  doc.text("INVOICE", 190, topY + 10, { align: 'right' }); 
+  doc.text("FROM:", margin, y);
   
-  // Ensure Y is below both left header and reasonable space for title
-  y = Math.max(y, topY + 40);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(50, 50, 50);
+  y += 5;
+  doc.text(settings.companyName, margin, y);
+  y += 5;
+  doc.text(settings.address || '', margin, y);
+  y += 5;
+  doc.text(settings.contactEmail || '', margin, y);
+  y += 5;
+  doc.text(settings.phone || '', margin, y);
 
-  // -- Invoice Details --
-  doc.setDrawColor(200, 200, 200);
-  doc.line(margin, y, 190, y);
-  y += 10;
+  y = 55;
+  const rightColX = pageWidth / 2 + 10;
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.setFont("helvetica", "bold");
+  doc.text("BILL TO:", rightColX, y);
+  
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(50, 50, 50);
+  y += 5;
+  doc.text(invoice.clientName, rightColX, y);
+  y += 5;
+  doc.text(invoice.clientEmail, rightColX, y);
+  if (invoice.clientPhone) {
+      y += 5;
+      doc.text(invoice.clientPhone, rightColX, y);
+  }
+  if (invoice.clientAddress) {
+      y += 5;
+      doc.text(invoice.clientAddress, rightColX, y);
+  }
+
+  y = 95;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(margin, y, pageWidth - (margin * 2), 20, 2, 2, 'FD');
+
+  const detailY = y + 12;
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text("INVOICE NO", margin + 10, detailY - 5);
+  doc.text("DATE", margin + 50, detailY - 5);
+  doc.text("DUE DATE", margin + 90, detailY - 5);
+  doc.text("STATUS", margin + 130, detailY - 5);
 
   doc.setFontSize(10);
   doc.setTextColor(50, 50, 50);
-  doc.setFont("helvetica", "normal");
-  
-  // Left Side: Bill To
-  doc.text("BILL TO:", margin, y);
   doc.setFont("helvetica", "bold");
-  doc.text(invoice.clientName, margin, y + 5);
-  doc.setFont("helvetica", "normal");
+  doc.text(invoice.invoiceNumber, margin + 10, detailY + 1);
+  doc.text(invoice.issueDate, margin + 50, detailY + 1);
+  doc.text(invoice.dueDate, margin + 90, detailY + 1);
   
-  let currentY = y + 10;
-  doc.text(invoice.clientEmail, margin, currentY);
-  
-  if (invoice.clientPhone) {
-      currentY += 5;
-      doc.text(invoice.clientPhone, margin, currentY);
-  }
+  const statusColor = invoice.status === 'Paid' ? '#16a34a' : invoice.status === 'Overdue' ? '#dc2626' : '#ca8a04';
+  doc.setTextColor(statusColor);
+  doc.text(invoice.status.toUpperCase(), margin + 130, detailY + 1);
 
-  if (invoice.clientAddress) {
-      currentY += 5;
-      doc.text(invoice.clientAddress, margin, currentY);
-  }
+  y += 35;
+  doc.setFillColor(241, 245, 249);
+  doc.rect(margin, y, pageWidth - (margin * 2), 10, 'F');
   
-  // Right Side: Info
-  // Fix Overlap: Move label to 130, value anchor to 190 (Right Margin)
-  const labelX = 130;
-  const valueX = 190;
-  
-  doc.text("Invoice No:", labelX, y);
-  doc.text(invoice.invoiceNumber, valueX, y, { align: 'right' });
-  
-  doc.text("Date:", labelX, y + 5);
-  doc.text(invoice.issueDate, valueX, y + 5, { align: 'right' });
-  
-  doc.text("Due Date:", labelX, y + 10);
-  doc.text(invoice.dueDate, valueX, y + 10, { align: 'right' });
-
+  doc.setFontSize(9);
+  doc.setTextColor(71, 85, 105);
   doc.setFont("helvetica", "bold");
-  doc.text("Status:", labelX, y + 15);
-  doc.setTextColor(invoice.status === 'Paid' ? '#22c55e' : invoice.status === 'Overdue' ? '#ef4444' : '#eab308');
-  doc.text(invoice.status.toUpperCase(), valueX, y + 15, { align: 'right' });
-  doc.setTextColor(50, 50, 50);
+  doc.text("DESCRIPTION", margin + 5, y + 7);
+  doc.text("QTY", pageWidth - margin - 40, y + 7, { align: 'right' });
+  doc.text("AMOUNT", pageWidth - margin - 5, y + 7, { align: 'right' });
 
-  // -- Items Table Header --
-  y += 30;
-  doc.setFillColor(245, 247, 250);
-  doc.rect(margin, y, 170, 10, 'F');
-  doc.setFont("helvetica", "bold");
-  doc.text("Description", margin + 5, y + 7);
-  doc.text("Amount", 180, y + 7, { align: 'right' });
-
-  // -- Items List --
   y += 10;
   doc.setFont("helvetica", "normal");
-  
-  invoice.items.forEach(item => {
+  doc.setTextColor(50, 50, 50);
+
+  invoice.items.forEach((item, index) => {
     y += 10;
+    if (index % 2 === 1) {
+        doc.setFillColor(250, 250, 250);
+        doc.rect(margin, y - 6, pageWidth - (margin * 2), 10, 'F');
+    }
     doc.text(item.description, margin + 5, y);
+    doc.text(item.quantity.toString(), pageWidth - margin - 40, y, { align: 'right' });
     
     const formattedPrice = settings.currencyPosition === 'left' 
       ? `${settings.currencySymbol}${item.price.toLocaleString()}`
       : `${item.price.toLocaleString()}${settings.currencySymbol}`;
-      
-    doc.text(formattedPrice, 180, y, { align: 'right' });
+    doc.text(formattedPrice, pageWidth - margin - 5, y, { align: 'right' });
   });
 
-  // -- Total --
   y += 20;
-  doc.setDrawColor(200, 200, 200);
-  doc.line(margin, y, 190, y);
+  doc.setDrawColor(226, 232, 240);
+  doc.line(pageWidth - margin - 80, y, pageWidth - margin, y);
   y += 10;
 
-  doc.setFontSize(14);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text("Total:", 140, y);
+  doc.setTextColor(15, 23, 42);
   
   const formattedTotal = settings.currencyPosition === 'left' 
       ? `${settings.currencySymbol}${invoice.amount.toLocaleString()}`
       : `${invoice.amount.toLocaleString()}${settings.currencySymbol}`;
-      
-  doc.text(formattedTotal, 180, y, { align: 'right' });
 
-  // -- Footer --
+  doc.text("TOTAL", pageWidth - margin - 60, y);
+  doc.text(formattedTotal, pageWidth - margin - 5, y, { align: 'right' });
+
+  const footerY = pageHeight - 20;
+  doc.setDrawColor(226, 232, 240);
+  doc.line(margin, footerY - 10, pageWidth - margin, footerY - 10);
+  
   doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(150, 150, 150);
-  doc.text("Thank you for your business!", 105, 280, { align: 'center' });
+  doc.setTextColor(148, 163, 184);
+  doc.text("Thank you for your business!", margin, footerY);
+  doc.text(`Generated on ${new Date().toLocaleDateString()}`, pageWidth - margin, footerY, { align: 'right' });
 
   return doc;
 };
@@ -180,53 +230,66 @@ const generatePdfDoc = async (invoice: Invoice, settings: CompanySettings) => {
 export const InvoiceService = {
   
   /**
-   * Generates a unique invoice number.
-   * Format: INV-YYYY-SEQUENCE
-   * Accepts an optional offset to handle batch generation.
+   * Generates a unique invoice number using a sequence counter.
+   * Finds the highest sequence number in the current year to prevent collisions.
    */
-  generateInvoiceNumber: (existingInvoices: Invoice[], offset: number = 0): string => {
+  generateInvoiceNumber: (existingInvoices: Invoice[]): string => {
     const year = new Date().getFullYear();
-    const count = existingInvoices.filter(i => i.issueDate.startsWith(year.toString())).length + 1 + offset;
-    return `INV-${year}-${count.toString().padStart(4, '0')}`;
+    const prefix = `INV-${year}-`;
+    
+    // Find highest sequence
+    let maxSeq = 0;
+    existingInvoices.forEach(inv => {
+        if (inv.invoiceNumber.startsWith(prefix)) {
+            const seqStr = inv.invoiceNumber.replace(prefix, '');
+            const seq = parseInt(seqStr, 10);
+            if (!isNaN(seq) && seq > maxSeq) {
+                maxSeq = seq;
+            }
+        }
+    });
+
+    const nextSeq = maxSeq + 1;
+    return `${prefix}${nextSeq.toString().padStart(4, '0')}`;
+  },
+
+  generatePdfBase64: async (invoice: Invoice, settings: CompanySettings): Promise<string> => {
+    const doc = await generatePdfDoc(invoice, settings);
+    return doc.output('datauristring');
   },
 
   /**
-   * Checks for clients with renewals within configured days and generates invoices if not present.
-   * Returns the number of invoices generated.
-   * Strict Rule: Only generate if status is NOT Paid.
+   * Production-grade invoice generator.
+   * Handles recurring billing cycles correctly.
    */
   checkAndGenerateAutoInvoices: (): number => {
     const settings = DB.getSettings();
     const clients = DB.getClients();
     const domains = DB.getDomains();
-    let invoices = DB.getInvoices(); // Get fresh list
+    let invoices = DB.getInvoices(); 
     let generatedCount = 0;
 
-    // Set up date boundaries (Local Time Midnight)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Use configured lead time or default to 30 days
-    const leadTime = settings.renewalNotificationDays || 30;
+    const leadTime = settings.renewalNotificationDays || 7;
     const futureThreshold = new Date(today);
-    futureThreshold.setDate(today.getDate() + leadTime); // Renewals due within X days
+    futureThreshold.setDate(today.getDate() + leadTime);
     
-    // Look back to catch missed overdue invoices (e.g. up to 60 days ago)
     const pastThreshold = new Date(today);
     pastThreshold.setDate(today.getDate() - 60);
 
-    // 1. Process Hosting Clients
+    // --- HOSTING ---
     clients.forEach(client => {
-      if (!client.nextRenewalDate) return;
-      if (client.paymentStatus === 'Paid') return; // Skip if already marked paid
+      if (!client.nextRenewalDate || client.status === 'Suspended') return;
 
       const [y, m, d] = client.nextRenewalDate.split('-').map(Number);
       const renewalDate = new Date(y, m - 1, d); 
 
-      // If renewal is within the window (Past 60 days to Future X days)
+      // Check if within generation window
       if (renewalDate >= pastThreshold && renewalDate <= futureThreshold) {
         
-        // Strict Check: Do we already have an invoice for this Specific Renewal Date?
+        // CRITICAL FIX: Check if an invoice ALREADY exists for this specific Due Date
         const alreadyInvoiced = invoices.some(inv => 
           inv.clientId === client.id && 
           inv.dueDate === client.nextRenewalDate &&
@@ -236,7 +299,7 @@ export const InvoiceService = {
         if (!alreadyInvoiced) {
           const newInvoice: Invoice = {
             id: `inv_${Date.now()}_h_${Math.random().toString(36).substr(2, 5)}`,
-            invoiceNumber: InvoiceService.generateInvoiceNumber(invoices, generatedCount),
+            invoiceNumber: InvoiceService.generateInvoiceNumber(invoices),
             clientId: client.id,
             clientName: client.clientName,
             clientEmail: client.email,
@@ -254,24 +317,27 @@ export const InvoiceService = {
           };
 
           DB.saveInvoice(newInvoice);
-          invoices.push(newInvoice); 
+          invoices.push(newInvoice); // Add to local array so subsequent iterations see it
           generatedCount++;
           
+          // Update client status to Unpaid to reflect pending renewal
           client.invoiceNumber = newInvoice.invoiceNumber;
           client.invoiceDate = newInvoice.issueDate;
           client.paymentStatus = 'Unpaid';
-          if (new Date() > renewalDate) {
+          
+          // If past due, mark overdue immediately
+          if (today > renewalDate) {
               client.paymentStatus = 'Overdue';
           }
+          
           DB.saveClient(client);
         }
       }
     });
 
-    // 2. Process Domain Clients
+    // --- DOMAINS ---
     domains.forEach(domain => {
-      if (!domain.expiryDate) return;
-      if (domain.paymentStatus === 'Paid') return;
+      if (!domain.expiryDate || domain.status === 'Suspended') return;
 
       const [y, m, d] = domain.expiryDate.split('-').map(Number);
       const expiryDate = new Date(y, m - 1, d); 
@@ -287,7 +353,7 @@ export const InvoiceService = {
         if (!alreadyInvoiced) {
           const newInvoice: Invoice = {
             id: `inv_${Date.now()}_d_${Math.random().toString(36).substr(2, 5)}`,
-            invoiceNumber: InvoiceService.generateInvoiceNumber(invoices, generatedCount),
+            invoiceNumber: InvoiceService.generateInvoiceNumber(invoices),
             clientId: domain.id,
             clientName: domain.clientName,
             clientEmail: domain.email,
@@ -310,7 +376,7 @@ export const InvoiceService = {
           
           domain.invoiceNumber = newInvoice.invoiceNumber;
           domain.paymentStatus = 'Unpaid';
-          if (new Date() > expiryDate) {
+          if (today > expiryDate) {
               domain.paymentStatus = 'Overdue';
           }
           DB.saveDomain(domain);
@@ -321,29 +387,20 @@ export const InvoiceService = {
     return generatedCount;
   },
 
-  /**
-   * Automates reminder emails (15, 10, 7, 3 days) and marks overdue items.
-   * Sends to Admin and Team Members.
-   */
   runAutomatedReminders: async (): Promise<number> => {
     const clients = DB.getClients();
     const domains = DB.getDomains();
     const users = DB.getUsers();
     
-    // Recipients: All Admins, Managers, and Team Members
-    // In a real app, maybe filter by permissions, but prompt asked for "All relevant team members"
-    const recipients = users.map(u => u.email).filter(Boolean);
-
-    if (recipients.length === 0) return 0;
+    // Send to Admins/Managers if client email fails or as internal notification
+    const teamRecipients = users.filter(u => u.role !== 'Team Member').map(u => u.email).filter(Boolean);
 
     let emailsSent = 0;
     const today = new Date();
     today.setHours(0,0,0,0);
 
-    // Reminder Intervals
-    const intervals = [15, 10, 7, 3];
+    const intervals = [15, 7, 3, 1]; // Reminder days
 
-    // Helper to process reminders
     const processEntity = async (
       id: string, 
       name: string, 
@@ -352,92 +409,99 @@ export const InvoiceService = {
       status: string, 
       type: 'hosting' | 'domain',
       amount: number,
+      email: string,
       updater: (status: string) => void
     ) => {
-      if (!dateStr) return;
-      if (status === 'Paid') return; // Stop if paid
+      if (!dateStr || status === 'Paid') return;
 
       const [y, m, d] = dateStr.split('-').map(Number);
       const dueDate = new Date(y, m - 1, d);
       
-      // Calculate days remaining (Math.ceil to handle partial days correctly)
       const diffTime = dueDate.getTime() - today.getTime();
       const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-      // 1. Check for Overdue
-      if (daysRemaining < 0 && status !== 'Overdue') {
-        // Mark as Overdue
-        updater('Overdue');
+      // Key to prevent duplicate emails for the same event
+      // e.g. "sent_reminder_hosting_c123_2024-12-31_7" (Sent 7 day reminder for specific due date)
+      
+      // 1. Overdue Handling
+      if (daysRemaining < 0) {
+        if (status !== 'Overdue') {
+            updater('Overdue');
+        }
         
-        // Send Overdue Notice (Only once per specific due date)
+        // Send Overdue Notice (Once)
         const logKey = `sent_overdue_${type}_${id}_${dateStr}`;
         if (!localStorage.getItem(logKey)) {
+           // Try to send to Client first
+           try {
+               await EmailService.sendClientEmail(
+                   email,
+                   name,
+                   `URGENT: ${type === 'hosting' ? 'Hosting' : 'Domain'} Overdue - ${targetName}`,
+                   `Your service for ${targetName} expired on ${dateStr}. Please pay immediately to avoid suspension.`
+               );
+           } catch (e) {
+               console.error("Failed to send client overdue email", e);
+           }
+
+           // Always notify team
            await EmailService.sendTeamReminder(
-             recipients,
-             `URGENT: ${type === 'hosting' ? 'Hosting' : 'Domain'} Overdue - ${name}`,
-             `The ${type} service for ${name} (${targetName}) is now OVERDUE.\nDue Date: ${dateStr}\nAmount: ${amount}`
+             teamRecipients,
+             `OVERDUE ALERT: ${targetName}`,
+             `The ${type} service for ${name} (${targetName}) is overdue.\nDue: ${dateStr}\nAmount: ${amount}`
            );
+           
            localStorage.setItem(logKey, 'true');
            emailsSent++;
         }
-        return; // Don't send standard reminders if overdue
+        return;
       }
 
-      // 2. Check for Standard Reminders (15, 10, 7, 3)
-      // We use intervals.includes(daysRemaining) for exact day matches
-      // OR buckets (e.g. 14 days) if we want catch-up, but prompt implies specific schedule.
-      // To ensure reliability if automation runs daily, exact match or small window is best.
+      // 2. Standard Reminders
       if (intervals.includes(daysRemaining)) {
          const logKey = `sent_reminder_${type}_${id}_${dateStr}_${daysRemaining}`;
          
          if (!localStorage.getItem(logKey)) {
-             await EmailService.sendTeamReminder(
-               recipients,
-               `Renewal Reminder: ${daysRemaining} Days Left - ${name}`,
-               `The ${type} service for ${name} (${targetName}) expires in ${daysRemaining} days.\nDue Date: ${dateStr}\nStatus: ${status}`
-             );
+             // Send to Client
+             try {
+                 await EmailService.sendClientEmail(
+                   email,
+                   name,
+                   `Renewal Reminder: ${daysRemaining} Days Left - ${targetName}`,
+                   `Your service for ${targetName} expires on ${dateStr}. Amount due: ${amount}.`
+                 );
+             } catch (e) {
+                 console.error("Failed to send client reminder", e);
+             }
+             
              localStorage.setItem(logKey, 'true');
              emailsSent++;
          }
       }
     };
 
-    // Run for Hosting
     for (const c of clients) {
         await processEntity(
-            c.id, c.clientName, c.website, c.nextRenewalDate, c.paymentStatus, 'hosting', c.amount,
-            (newStatus) => { 
-                c.paymentStatus = newStatus;
-                DB.saveClient(c);
-            }
+            c.id, c.clientName, c.website, c.nextRenewalDate, c.paymentStatus, 'hosting', c.amount, c.email,
+            (newStatus) => { c.paymentStatus = newStatus; DB.saveClient(c); }
         );
     }
 
-    // Run for Domains
     for (const d of domains) {
         await processEntity(
-            d.id, d.clientName, d.domainName, d.expiryDate, d.paymentStatus, 'domain', d.amount,
-            (newStatus) => { 
-                d.paymentStatus = newStatus;
-                DB.saveDomain(d);
-            }
+            d.id, d.clientName, d.domainName, d.expiryDate, d.paymentStatus, 'domain', d.amount, d.email,
+            (newStatus) => { d.paymentStatus = newStatus; DB.saveDomain(d); }
         );
     }
 
     return emailsSent;
   },
 
-  /**
-   * Generates a PDF for a specific invoice using jsPDF and saves it.
-   */
   downloadPDF: async (invoice: Invoice, settings: CompanySettings) => {
     const doc = await generatePdfDoc(invoice, settings);
     doc.save(`${invoice.invoiceNumber}.pdf`);
   },
 
-  /**
-   * Generates a PDF and opens it in a new tab for printing.
-   */
   printPDF: async (invoice: Invoice, settings: CompanySettings) => {
     const doc = await generatePdfDoc(invoice, settings);
     doc.autoPrint();

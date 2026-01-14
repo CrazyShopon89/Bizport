@@ -87,9 +87,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const applyTheme = (s: CompanySettings) => {
     const root = document.documentElement;
+    // Branding
     root.style.setProperty('--color-primary', s.primaryColor);
+    root.style.setProperty('--color-primary-hover', s.primaryHoverColor || '#4338ca');
+    root.style.setProperty('--color-disabled', s.disabledColor || '#94a3b8');
     root.style.setProperty('--color-secondary', s.secondaryColor);
+    
+    // UI/UX Customization
     root.style.setProperty('--font-primary', s.font);
+    root.style.setProperty('--ui-font-scale', (s.fontScale || 1).toString());
+    root.style.setProperty('--ui-radius', s.borderRadius || '0.75rem');
+    root.style.setProperty('--ui-btn-border', s.buttonBorderWidth || '0px');
   };
 
   const login = async (email: string, pass: string): Promise<{success: boolean, error?: string}> => {

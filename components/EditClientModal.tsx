@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Save, User, Server, CreditCard, Calendar, Download, AlertCircle } from 'lucide-react';
 import { Client, COUNTRY_CODES } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -38,17 +39,47 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
     onSave(formData);
   };
 
+  const calculateDates = (setupDate: string, period: string) => {
+     // Use new smart calculation to project past dates to current/future cycle
+     const nextDate = DB.calculateNextRenewalDate(setupDate, period);
+     
+     let invoiceDate = formData.invoiceDate;
+     // Automatically update Invoice Date to 7 days before renewal
+     if (nextDate) {
+         const d = new Date(nextDate);
+         d.setDate(d.getDate() - (settings.renewalNotificationDays || 7));
+         invoiceDate = d.toISOString().split('T')[0];
+     }
+     
+     return { nextRenewalDate: nextDate, validationDate: nextDate, invoiceDate };
+  };
+
   const handleDateChange = (field: 'setupDate' | 'nextRenewalDate' | 'invoiceDate' | 'validationDate', value: string) => {
      let newFormData = { ...formData, [field]: value };
      
-     // Auto-calculate renewal if setup date changes
+     // Auto-calculate renewal if setup date changes based on current year projection
      if (field === 'setupDate') {
-         const settings = DB.getSettings();
-         const period = settings.defaultHostingRenewalPeriod || '1 Year';
-         newFormData.nextRenewalDate = DB.calculateDate(value, period);
-         newFormData.validationDate = DB.calculateDate(value, period);
+         const period = formData.renewalPeriod || settings.defaultHostingRenewalPeriod || '1 Year';
+         const dates = calculateDates(value, period);
+         
+         newFormData.nextRenewalDate = dates.nextRenewalDate;
+         newFormData.validationDate = dates.validationDate;
+         newFormData.invoiceDate = dates.invoiceDate;
      }
      setFormData(newFormData);
+  };
+
+  const handlePeriodChange = (value: string) => {
+      // If period changes, recalculate from the Setup Date
+      const dates = calculateDates(formData.setupDate, value);
+      
+      setFormData({
+          ...formData,
+          renewalPeriod: value,
+          nextRenewalDate: dates.nextRenewalDate,
+          validationDate: dates.validationDate,
+          invoiceDate: dates.invoiceDate
+      });
   };
 
   const handleDownloadInvoice = (e: React.MouseEvent) => {
@@ -99,11 +130,11 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
     setFormData({ ...formData, phone: `${code}${number}` });
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fade-in-up max-h-[90vh] flex flex-col">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 backdrop-blur-[1px]">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-fade-in-up h-auto max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
           <div>
              <h3 className="font-bold text-lg text-slate-800">{client.id.startsWith('c') && client.clientName === 'New Client' ? 'New Hosting Record' : 'Edit Hosting Record'}</h3>
              <p className="text-xs text-slate-500">Update client details and service configuration.</p>
@@ -114,8 +145,8 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
         </div>
 
         {/* Form Content */}
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
-          <form id="edit-client-form" onSubmit={handleSubmit} className="space-y-8">
+        <div className="p-4 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/50">
+          <form id="edit-client-form" onSubmit={handleSubmit} className="space-y-4">
             
             {error && (
               <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl border border-red-200 text-sm flex items-center gap-2 shadow-sm">
@@ -125,34 +156,34 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
             )}
 
             {/* Section 1: Client Details */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                  <User className="text-primary" size={20} />
-                  <h4 className="font-semibold text-slate-800">Client Details</h4>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <User className="text-primary" size={18} />
+                  <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">Client Details</h4>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Client Name</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Client Name</label>
                     <input
                       type="text"
                       required
                       value={formData.clientName}
                       onChange={(e) => setFormData({...formData, clientName: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Website</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Website</label>
                     <input
                       type="text"
                       required
                       value={formData.website}
                       onChange={(e) => setFormData({...formData, website: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Email Address</label>
                     <input
                       type="email"
                       required
@@ -161,18 +192,18 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                           setFormData({...formData, email: e.target.value});
                           setError(null);
                       }}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-primary outline-none transition-all ${
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-primary outline-none transition-all text-sm ${
                           error ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-slate-300 focus:border-primary'
                       }`}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Phone</label>
                     <div className="flex rounded-lg border border-slate-300 overflow-hidden focus-within:ring-1 focus-within:ring-primary focus-within:border-primary bg-white">
                         <select
                           value={phoneCode}
                           onChange={(e) => handlePhoneChange(e.target.value, phoneNumber)}
-                          className="bg-slate-50 border-r border-slate-300 px-3 py-2 outline-none text-slate-700 text-sm font-medium min-w-[100px]"
+                          className="bg-slate-50 border-r border-slate-300 px-3 py-2 outline-none text-slate-700 text-sm font-medium min-w-[80px]"
                         >
                             {COUNTRY_CODES.map(c => (
                                 <option key={c.code} value={c.code}>{c.country} {c.code}</option>
@@ -182,7 +213,7 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                           type="tel"
                           value={phoneNumber}
                           onChange={(e) => handlePhoneChange(phoneCode, e.target.value)}
-                          className="flex-1 px-3 py-2 outline-none"
+                          className="flex-1 px-3 py-2 outline-none text-sm"
                           placeholder="123456789"
                         />
                     </div>
@@ -191,18 +222,18 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
             </div>
 
             {/* Section 2: Service Configuration */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                  <Server className="text-primary" size={20} />
-                  <h4 className="font-semibold text-slate-800">Service Configuration</h4>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <Server className="text-primary" size={18} />
+                  <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">Service Configuration</h4>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                     <label className="block text-sm font-medium text-slate-700 mb-1">Service Status</label>
+                     <label className="block text-xs font-semibold text-slate-600 mb-1">Service Status</label>
                      <select
                        value={formData.status}
                        onChange={(e) => setFormData({...formData, status: e.target.value})}
-                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white"
+                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white text-sm"
                      >
                        {dataFields.statuses.map((s) => (
                          <option key={s} value={s}>{s}</option>
@@ -210,68 +241,83 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                      </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Storage Capacity (GB)</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Storage Capacity (GB)</label>
                     <input
                       type="number"
                       value={formData.storageGB}
                       onChange={(e) => setFormData({...formData, storageGB: Number(e.target.value)})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Initial Setup Date</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Renewal Period</label>
+                    <select
+                      value={formData.renewalPeriod || settings.defaultHostingRenewalPeriod || '1 Year'}
+                      onChange={(e) => handlePeriodChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white text-sm"
+                    >
+                        <option value="1 Month">1 Month</option>
+                        <option value="3 Months">3 Months</option>
+                        <option value="6 Months">6 Months</option>
+                        <option value="1 Year">1 Year</option>
+                        <option value="2 Years">2 Years</option>
+                        <option value="3 Years">3 Years</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Initial Setup Date</label>
                     <input
                       type="date"
                       value={formData.setupDate}
                       onChange={(e) => handleDateChange('setupDate', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Next Renewal Date</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Next Renewal Date</label>
                     <input
                       type="date"
                       required
                       value={formData.nextRenewalDate}
                       onChange={(e) => handleDateChange('nextRenewalDate', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none font-medium text-primary"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none font-medium text-primary text-sm"
                     />
                   </div>
                    <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Validation Date</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Validation Date</label>
                     <input
                       type="date"
                       value={formData.validationDate}
                       onChange={(e) => handleDateChange('validationDate', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                </div>
             </div>
 
             {/* Section 3: Billing & Payment */}
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-               <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-                  <CreditCard className="text-primary" size={20} />
-                  <h4 className="font-semibold text-slate-800">Billing & Payment</h4>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <CreditCard className="text-primary" size={18} />
+                  <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">Billing & Payment</h4>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Service Fee</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Service Fee</label>
                     <input
                       type="number"
                       required
                       value={formData.amount}
                       onChange={(e) => setFormData({...formData, amount: Number(e.target.value)})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                    <div>
-                     <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method</label>
+                     <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Method</label>
                      <select
                        value={formData.paymentMethod}
                        onChange={(e) => setFormData({...formData, paymentMethod: e.target.value})}
-                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white"
+                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white text-sm"
                      >
                        {dataFields.paymentMethods.map((m) => (
                          <option key={m} value={m}>{m}</option>
@@ -279,11 +325,11 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                      </select>
                   </div>
                   <div>
-                     <label className="block text-sm font-medium text-slate-700 mb-1">Payment Status</label>
+                     <label className="block text-xs font-semibold text-slate-600 mb-1">Payment Status</label>
                      <select
                        value={formData.paymentStatus}
                        onChange={(e) => setFormData({...formData, paymentStatus: e.target.value})}
-                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white"
+                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white text-sm"
                      >
                        <option value="Paid">Paid</option>
                        <option value="Unpaid">Unpaid</option>
@@ -291,11 +337,11 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                      </select>
                   </div>
                   <div>
-                     <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Status</label>
+                     <label className="block text-xs font-semibold text-slate-600 mb-1">Invoice Status</label>
                      <select
                        value={formData.invoiceStatus}
                        onChange={(e) => setFormData({...formData, invoiceStatus: e.target.value})}
-                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white"
+                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none bg-white text-sm"
                      >
                        {dataFields.invoiceStatuses.map((s) => (
                          <option key={s} value={s}>{s}</option>
@@ -303,30 +349,30 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
                      </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Number</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Invoice Number</label>
                     <input
                       type="text"
                       value={formData.invoiceNumber}
                       onChange={(e) => setFormData({...formData, invoiceNumber: e.target.value})}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                    <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Date</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Invoice Date</label>
                     <input
                       type="date"
                       value={formData.invoiceDate}
                       onChange={(e) => handleDateChange('invoiceDate', e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
                     />
                   </div>
                   <div className="lg:col-span-2 flex items-end">
                       <button 
                         onClick={handleDownloadInvoice}
-                        className="w-full py-2 border border-slate-300 rounded-lg flex items-center justify-center gap-2 hover:bg-slate-50 text-slate-700 transition-colors"
+                        className="w-full py-2 border border-slate-300 rounded-lg flex items-center justify-center gap-2 hover:bg-slate-50 text-slate-700 transition-colors text-sm"
                         title="Download Invoice PDF"
                       >
-                        <Download size={18} />
+                        <Download size={16} />
                         Download Invoice
                       </button>
                   </div>
@@ -337,25 +383,26 @@ const EditClientModal: React.FC<EditClientModalProps> = ({ client, isOpen, onClo
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
           <button
             onClick={onClose}
             type="button"
-            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-white transition-colors"
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-white transition-colors text-sm font-medium"
           >
             Cancel
           </button>
           <button
             type="submit"
             form="edit-client-form"
-            className="flex items-center gap-2 px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors shadow-sm"
+            className="flex items-center gap-2 px-6 py-2 bg-primary text-white font-medium rounded-lg hover:bg-opacity-90 transition-colors shadow-sm text-sm"
           >
-            <Save size={18} />
+            <Save size={16} />
             Save Changes
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

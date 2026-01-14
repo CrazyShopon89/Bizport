@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       // This allows process.env.API_KEY to work in the client-side code after build
-      'process.env.API_KEY': JSON.stringify(env.API_KEY)
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || "AIzaSyBrywMXKq0ZkdcSDDII_joq5d_MZ3eHCY0")
     }
   };
 });

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -9,7 +9,10 @@ import Profile from './pages/Profile';
 import Admin from './pages/Admin';
 import Team from './pages/Team';
 import Invoices from './pages/Invoices';
+import EmailLogs from './pages/EmailLogs';
+import Backups from './pages/Backups'; // Import New Page
 import NotificationCenter from './components/NotificationCenter';
+import ProfileDropdown from './components/ProfileDropdown';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { DataProvider } from './context/DataContext';
@@ -51,14 +54,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
                 >
                   <Menu size={24} />
                 </button>
-                {/* Placeholder for Breadcrumbs or Page Title if needed later */}
-                <div className="text-sm font-medium text-slate-400 hidden sm:block">
-                  {/* Space reserved for potential future breadcrumbs */}
-                </div>
              </div>
 
-             <div className="flex items-center gap-4">
+             <div className="flex items-center gap-3 sm:gap-5">
                 <NotificationCenter />
+                <div className="h-8 w-px bg-slate-200 hidden sm:block"></div>
+                <ProfileDropdown />
              </div>
         </header>
 
@@ -78,6 +79,35 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         return <Navigate to="/" replace />;
     }
     return <>{children}</>;
+};
+
+// Component to handle dynamic Branding updates (Favicon & Title)
+const BrandingManager: React.FC = () => {
+  const { settings } = useAuth();
+
+  useEffect(() => {
+    // 1. Sync Favicon
+    if (settings.iconUrl) {
+      const link = document.getElementById('app-favicon') as HTMLLinkElement || document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+      if (link) {
+        link.href = settings.iconUrl;
+      } else {
+        // Fallback if link tag doesn't exist
+        const newLink = document.createElement('link');
+        newLink.id = 'app-favicon';
+        newLink.rel = 'icon';
+        newLink.href = settings.iconUrl;
+        document.head.appendChild(newLink);
+      }
+    }
+
+    // 2. Sync Page Title
+    if (settings.companyName) {
+      document.title = `${settings.companyName} - Management Dashboard`;
+    }
+  }, [settings.iconUrl, settings.companyName]);
+
+  return null;
 };
 
 const AppRoutes = () => {
@@ -103,6 +133,22 @@ const AppRoutes = () => {
               </AdminRoute>
           </ProtectedRoute>
       } />
+
+      <Route path="/logs" element={
+          <ProtectedRoute>
+              <AdminRoute>
+                  <EmailLogs />
+              </AdminRoute>
+          </ProtectedRoute>
+      } />
+
+      <Route path="/backups" element={
+          <ProtectedRoute>
+              <AdminRoute>
+                  <Backups />
+              </AdminRoute>
+          </ProtectedRoute>
+      } />
       
       <Route path="/settings" element={<Navigate to="/admin" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
@@ -113,6 +159,7 @@ const AppRoutes = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
+      <BrandingManager />
       <NotificationProvider>
         <DataProvider>
           <Router>
