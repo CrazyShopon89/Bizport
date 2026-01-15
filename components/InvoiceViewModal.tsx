@@ -64,7 +64,7 @@ const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ invoice, isOpen, on
           <div>
             <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
               Invoice #{invoice.invoiceNumber}
-              <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wide font-bold border ${
+              <span className={`text-xs px-2 py-0.5 rounded-full uppercase tracking-wide font-bold border ${
                   invoice.status === 'Paid' ? 'bg-green-50 text-green-700 border-green-200' : 
                   invoice.status === 'Overdue' ? 'bg-red-50 text-red-700 border-red-200' : 
                   'bg-amber-50 text-amber-700 border-amber-200'

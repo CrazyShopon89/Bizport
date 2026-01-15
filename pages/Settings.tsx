@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X, Calendar, Bell, AlertTriangle, Zap, Terminal, Send, Layout, MousePointer, Ban, Globe, Shield, Lock, FileText, ChevronRight, User, Phone, MapPin, Link as LinkIcon, Facebook, Linkedin, Twitter, Instagram } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X, Calendar, Bell, AlertTriangle, Zap, Terminal, Send, Layout, MousePointer, Ban, Globe, Shield, Lock, FileText, ChevronRight, User, Phone, MapPin, Link as LinkIcon, Facebook, Linkedin, Twitter, Instagram, Search } from 'lucide-react';
 import { DB } from '../services/db';
 import { SMTPSettings, DataFields, COUNTRY_CODES, EmailJSConfig, EmailProvider, EmailTemplate, SignatureConfig } from '../types';
 import { EmailService } from '../services/emailService';
@@ -217,6 +216,8 @@ export const SettingsForm: React.FC = () => {
   // Immediate UI Preview logic
   const handleUIChange = (key: keyof typeof formData, value: any) => {
       setFormData(prev => ({ ...prev, [key]: value }));
+      // Pass the full formData to ensure we don't lose other unsaved changes (like Company Name)
+      // due to the context update triggering a re-render and useEffect sync.
       updateCompanySettings({ ...formData, [key]: value });
   };
 
@@ -540,7 +541,7 @@ export const SettingsForm: React.FC = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <p className="text-[10px] text-slate-400 mt-3 text-center">
+                                        <p className="text-xs text-slate-400 mt-3 text-center">
                                             Live Preview • Updates instantly
                                         </p>
                                     </div>
@@ -743,13 +744,13 @@ export const SettingsForm: React.FC = () => {
                         <p>See how your buttons look instantly.</p>
                     </div>
                     <div className="flex gap-3">
-                        <button type="button" className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium shadow-sm hover:bg-slate-50 transition-colors">
+                        <button type="button" className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-medium shadow-sm hover:bg-slate-50 transition-colors rounded-xl">
                             Secondary
                         </button>
-                        <button type="button" className="px-5 py-2.5 bg-indigo-600 text-white font-medium shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2">
+                        <button type="button" className="px-5 py-2.5 bg-indigo-600 text-white font-medium shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2 rounded-xl">
                             <Zap size={16} /> Primary Action
                         </button>
-                        <button type="button" disabled className="px-5 py-2.5 bg-slate-400 text-white font-medium cursor-not-allowed opacity-70">
+                        <button type="button" disabled className="px-5 py-2.5 bg-slate-400 text-white font-medium cursor-not-allowed opacity-70 rounded-xl">
                             Disabled
                         </button>
                     </div>
@@ -823,7 +824,7 @@ export const SettingsForm: React.FC = () => {
                             <div className="flex flex-col items-center justify-center pt-5 pb-6 text-center px-2">
                                 <Upload className="w-8 h-8 mb-2 text-slate-400" />
                                 <p className="text-xs text-slate-500">Sidebar & Browser Tab</p>
-                                <p className="text-[10px] text-slate-400">PNG, JPG, SVG (Max 100KB)</p>
+                                <p className="text-xs text-slate-400">PNG, JPG, SVG (Max 100KB)</p>
                             </div>
                             <input 
                                 type="file" 
@@ -896,6 +897,37 @@ export const SettingsForm: React.FC = () => {
                 />
                 </div>
             </div>
+            </section>
+
+            {/* System Visibility (SEO) */}
+            <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                    <Search className="text-slate-500" size={20} />
+                    <h2 className="font-semibold text-slate-800">System Visibility</h2>
+                </div>
+                <div className="p-4 sm:p-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                        <div>
+                            <h4 className="text-sm font-bold text-slate-800">Search Engine Indexing</h4>
+                            <p className="text-xs text-slate-500 mt-1 max-w-lg">
+                                Allow search engines (like Google, Bing) to index your management dashboard. 
+                                Disabling this adds a <code className="bg-slate-200 px-1 rounded text-slate-700">noindex</code> tag to prevent public listing.
+                            </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input 
+                                type="checkbox" 
+                                checked={formData.allowSearchIndexing} 
+                                onChange={(e) => setFormData({...formData, allowSearchIndexing: e.target.checked})}
+                                className="sr-only peer" 
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                            <span className="ml-3 text-sm font-medium text-slate-700">
+                                {formData.allowSearchIndexing ? 'Visible' : 'Hidden'}
+                            </span>
+                        </label>
+                    </div>
+                </div>
             </section>
 
             {/* Renewal Defaults */}

@@ -64,7 +64,7 @@ const NotificationCenter: React.FC = () => {
           <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
             <h3 className="font-semibold text-slate-800 flex items-center gap-2">
               Notifications 
-              {unreadCount > 0 && <span className="bg-primary text-white text-[10px] px-2 py-0.5 rounded-full">{unreadCount} New</span>}
+              {unreadCount > 0 && <span className="bg-primary text-white text-[11px] px-2 py-0.5 rounded-full font-bold">{unreadCount} New</span>}
             </h3>
             {unreadCount > 0 && (
               <button 
@@ -101,7 +101,7 @@ const NotificationCenter: React.FC = () => {
                         {!notif.isRead && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1.5"></span>}
                       </div>
                       <p className="text-xs text-slate-500 line-clamp-2 mb-1.5 leading-relaxed">{notif.message}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">{formatDate(notif.timestamp)}</p>
+                      <p className="text-xs text-slate-400 font-medium">{formatDate(notif.timestamp)}</p>
                     </div>
                   </div>
                 ))}

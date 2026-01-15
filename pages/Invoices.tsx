@@ -124,7 +124,7 @@ const Invoices: React.FC = () => {
   const getTypeBadge = (type: string) => {
     const isHosting = type === 'Hosting Renew';
     return (
-        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold tracking-wide uppercase border ${
+        <span className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold tracking-wide uppercase border ${
             isHosting 
             ? 'bg-indigo-50 text-indigo-700 border-indigo-100' 
             : 'bg-purple-50 text-purple-700 border-purple-100'

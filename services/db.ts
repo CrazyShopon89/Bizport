@@ -64,7 +64,8 @@ const DEFAULT_SETTINGS: CompanySettings = {
   },
   
   backupSchedule: 'disabled',
-  backupRetentionCount: 5
+  backupRetentionCount: 5,
+  allowSearchIndexing: false // Default to private
 };
 
 const DEFAULT_SMTP: SMTPSettings = {
@@ -582,6 +583,11 @@ export const DB = {
       if (!merged.fontScale) merged.fontScale = DEFAULT_SETTINGS.fontScale;
       if (!merged.borderRadius) merged.borderRadius = DEFAULT_SETTINGS.borderRadius;
       if (!merged.buttonBorderWidth) merged.buttonBorderWidth = DEFAULT_SETTINGS.buttonBorderWidth;
+      
+      // Ensure SEO setting exists
+      if (typeof merged.allowSearchIndexing === 'undefined') {
+          merged.allowSearchIndexing = DEFAULT_SETTINGS.allowSearchIndexing;
+      }
 
       return merged;
     } catch { return DEFAULT_SETTINGS; }

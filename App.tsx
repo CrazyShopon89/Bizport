@@ -18,7 +18,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { DataProvider } from './context/DataContext';
 import { Menu } from 'lucide-react';
 
-// Define props interface for ProtectedRoute to resolve children prop error
+// Define props interface for ProtectedRoute
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
@@ -81,7 +81,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <>{children}</>;
 };
 
-// Component to handle dynamic Branding updates (Favicon & Title)
+// Component to handle dynamic Branding and SEO updates
 const BrandingManager: React.FC = () => {
   const { settings } = useAuth();
 
@@ -105,7 +105,22 @@ const BrandingManager: React.FC = () => {
     if (settings.companyName) {
       document.title = `${settings.companyName} - Management Dashboard`;
     }
-  }, [settings.iconUrl, settings.companyName]);
+
+    // 3. Search Engine Visibility (Robots Meta Tag)
+    let metaRobots = document.querySelector("meta[name='robots']");
+    if (!metaRobots) {
+      metaRobots = document.createElement('meta');
+      metaRobots.setAttribute('name', 'robots');
+      document.head.appendChild(metaRobots);
+    }
+
+    if (settings.allowSearchIndexing) {
+      metaRobots.setAttribute('content', 'index, follow');
+    } else {
+      metaRobots.setAttribute('content', 'noindex, nofollow');
+    }
+
+  }, [settings.iconUrl, settings.companyName, settings.allowSearchIndexing]);
 
   return null;
 };

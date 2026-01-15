@@ -299,7 +299,7 @@ const Domains: React.FC = () => {
                           <Calendar size={14} className="text-slate-400"/>
                           {domain.expiryDate}
                           {new Date(domain.expiryDate) < new Date(new Date().setMonth(new Date().getMonth() + 1)) && (
-                            <span className="ml-2 text-rose-500 text-[10px] font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100 uppercase">Soon</span>
+                            <span className="ml-2 text-rose-500 text-xs font-bold bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100 uppercase">Soon</span>
                           )}
                       </div>
                     </td>

@@ -80,7 +80,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
         {/* Navigation */}
         <div className="flex-1 overflow-y-auto no-scrollbar py-6 px-3">
-          <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Main Menu</p>
           <nav className="space-y-1">
             {navItems.map((item) => (
               <button

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, UserPlus, User, Mail, Phone, Shield, Loader2, AlertCircle } from 'lucide-react';
+import { X, UserPlus, User, Mail, Phone, Shield, Loader2, AlertCircle, Lock } from 'lucide-react';
 import { User as UserType, UserRole, COUNTRY_CODES } from '../types';
 import { EmailService } from '../services/emailService';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +20,7 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
     phone: '',
     role: 'Team Member' as UserRole
   });
+  const [manualPassword, setManualPassword] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'error' | 'success', message: string } | null>(null);
@@ -40,8 +41,18 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
     setStatus(null);
 
     try {
-      // 1. Generate Secure Password
-      const tempPassword = SecurityService.generateStrongPassword(12);
+      // 1. Generate or Validate Password
+      let tempPassword = manualPassword;
+      
+      if (tempPassword) {
+          if (!SecurityService.validatePasswordStrength(tempPassword)) {
+              setStatus({ type: 'error', message: 'Password must be min 8 chars with uppercase, lowercase & number.' });
+              setLoading(false);
+              return;
+          }
+      } else {
+          tempPassword = SecurityService.generateStrongPassword(12);
+      }
 
       // 2. Prepare User Object
       const newUser: Omit<UserType, 'id'> = {
@@ -63,6 +74,7 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
       
       // 5. Reset and Close
       setFormData({ name: '', email: '', phone: '', role: 'Team Member' });
+      setManualPassword('');
       onClose();
 
     } catch (error: any) {
@@ -105,7 +117,7 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
                <UserPlus size={20} className="text-primary"/>
                Invite Team Member
              </h3>
-             <p className="text-xs text-slate-500">Auto-generates credentials and emails the user.</p>
+             <p className="text-xs text-slate-500">Add a new user to your organization.</p>
           </div>
           <button onClick={onClose} disabled={loading} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X size={24} />
@@ -206,8 +218,23 @@ const InviteTeamModal: React.FC<InviteTeamModalProps> = ({ isOpen, onClose, onSa
               </div>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1">Temporary Password (Optional)</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Leave blank to auto-generate"
+                  value={manualPassword}
+                  onChange={(e) => setManualPassword(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-[11px] text-blue-700 leading-snug">
-               <p><strong>Note:</strong> A strong temporary password will be generated automatically. The user will receive an email with login credentials and will be forced to change their password upon first login.</p>
+               <p><strong>Note:</strong> The user will receive an email with login credentials and will be forced to change their password upon first login.</p>
             </div>
 
           </form>

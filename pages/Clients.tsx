@@ -230,12 +230,12 @@ const Clients: React.FC = () => {
                     <td className="py-3 px-4">
                       <div className="text-sm text-slate-700">{client.nextRenewalDate}</div>
                       {new Date(client.nextRenewalDate) < new Date(new Date().setDate(new Date().getDate() + 30)) && (
-                        <div className="text-[10px] text-amber-600 font-medium">Expires Soon</div>
+                        <div className="text-xs text-amber-600 font-medium mt-0.5">Expires Soon</div>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="text-sm font-bold text-slate-900">{formatCurrency(client.amount)}</div>
-                      <div className="text-[10px] text-slate-400">{client.renewalPeriod}</div>
+                      <div className="text-xs text-slate-400">{client.renewalPeriod}</div>
                     </td>
                     <td className="py-3 px-4">
                        <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
@@ -245,7 +245,7 @@ const Clients: React.FC = () => {
                        }`}>
                            {client.paymentStatus}
                        </span>
-                       <div className="text-[10px] text-slate-400 mt-0.5 ml-0.5">{client.paymentMethod}</div>
+                       <div className="text-xs text-slate-400 mt-0.5 ml-0.5">{client.paymentMethod}</div>
                     </td>
                     <td className="py-3 px-4">
                        <div className="text-sm text-slate-600 truncate max-w-[120px]" title={client.email}>{client.email}</div>
@@ -313,7 +313,7 @@ const Clients: React.FC = () => {
                                                         <td className="px-3 py-2 text-slate-500">{inv.dueDate}</td>
                                                         <td className="px-3 py-2 font-medium text-slate-700">{formatCurrency(inv.amount)}</td>
                                                         <td className="px-3 py-2">
-                                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${inv.status === 'Paid' ? 'text-green-600 bg-green-50' : 'text-amber-600 bg-amber-50'}`}>{inv.status}</span>
+                                                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${inv.status === 'Paid' ? 'text-green-600 bg-green-50' : 'text-amber-600 bg-amber-50'}`}>{inv.status}</span>
                                                         </td>
                                                         <td className="px-3 py-2 text-right">
                                                             <button onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }} className="text-indigo-600 hover:underline">Open</button>

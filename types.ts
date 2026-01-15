@@ -107,6 +107,7 @@ export interface CompanySettings {
   
   emailProvider: EmailProvider;
   emailJsConfig: EmailJSConfig;
+  allowSearchIndexing?: boolean; // New SEO setting
   
   // Backup Config
   backupSchedule?: 'daily' | 'weekly' | 'monthly' | 'disabled';

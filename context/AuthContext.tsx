@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { User, CompanySettings, DataFields } from '../types';
 import { DB } from '../services/db';
 import { SecurityService } from '../services/security';
+import { Loader2 } from 'lucide-react';
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +28,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<CompanySettings>(DB.getSettings());
   const [dataFields, setDataFields] = useState<DataFields>(DB.getDataFields());
+  const [loading, setLoading] = useState(true); // Loading state for session check
   
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -34,26 +36,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     DB.init();
     refreshData();
-    const storedUser = localStorage.getItem('hm_active_user');
+    
+    // Check sessionStorage (Persists on reload, clears on close)
+    const storedUser = sessionStorage.getItem('hm_active_user');
+    
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         const dbUser = DB.findUser(parsedUser.email);
         
-        // Ensure user exists and matches stored session state (simplified check)
+        // Ensure user exists and matches stored session state
         if (dbUser && dbUser.id === parsedUser.id) {
           setUser(dbUser);
           applyTheme(DB.getSettings());
           startSessionTimer();
         } else {
-          localStorage.removeItem('hm_active_user');
+          sessionStorage.removeItem('hm_active_user');
         }
       } catch (e) {
-        localStorage.removeItem('hm_active_user');
+        sessionStorage.removeItem('hm_active_user');
       }
     } else {
        applyTheme(DB.getSettings());
     }
+
+    setLoading(false); // Session check complete
 
     // Events to reset session timer
     const resetTimer = () => startSessionTimer();
@@ -101,12 +108,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const login = async (email: string, pass: string): Promise<{success: boolean, error?: string}> => {
-    await new Promise(r => setTimeout(r, 800)); // Fake network delay for security (timing attack mitigation)
+    await new Promise(r => setTimeout(r, 800)); // Fake network delay for security
     
     const foundUser = DB.findUser(email);
     
     if (!foundUser) {
-       // Return generic error for security
        return { success: false, error: 'Invalid credentials.' };
     }
 
@@ -116,27 +122,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: false, error: `Account locked. Try again in ${waitMin} minutes.` };
     }
 
-    // Verify Password (Check hash)
+    // Verify Password
     const isValid = SecurityService.verifyPassword(pass, foundUser.password || '');
-    
-    // Fallback for legacy plain text users during migration/dev
     const isLegacyValid = !isValid && foundUser.password === pass;
 
     if (isValid || isLegacyValid) {
       // Success
-      
-      // Reset failed attempts
       foundUser.failedLoginAttempts = 0;
       foundUser.lockUntil = undefined;
       
-      // Migrate legacy password if needed
       if (isLegacyValid) {
          foundUser.password = SecurityService.hashPassword(pass);
       }
 
       DB.saveUser(foundUser);
       setUser(foundUser);
-      localStorage.setItem('hm_active_user', JSON.stringify(foundUser));
+      
+      // Use sessionStorage for session-only persistence (logout on browser close)
+      sessionStorage.setItem('hm_active_user', JSON.stringify(foundUser));
+      
       startSessionTimer();
       return { success: true };
     } else {
@@ -146,9 +150,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (attempts >= 5) {
          const lockTime = new Date();
-         lockTime.setMinutes(lockTime.getMinutes() + 15); // Lock for 15 mins
+         lockTime.setMinutes(lockTime.getMinutes() + 15);
          foundUser.lockUntil = lockTime.toISOString();
-         foundUser.failedLoginAttempts = 0; // Reset count so they can try after lock
+         foundUser.failedLoginAttempts = 0;
          DB.saveUser(foundUser);
          return { success: false, error: 'Too many failed attempts. Account locked for 15 minutes.' };
       }
@@ -160,27 +164,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('hm_active_user');
+    sessionStorage.removeItem('hm_active_user');
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
   };
 
   const updateProfile = (data: Partial<User>) => {
     if (!user) return;
     
-    // If updating password, hash it
     if (data.password) {
         data.password = SecurityService.hashPassword(data.password);
     }
     
     const updatedUser = { ...user, ...data };
     
-    // Save to DB
     DB.saveUser(updatedUser);
-    
-    // Update State
     setUser(updatedUser);
     refreshData();
-    localStorage.setItem('hm_active_user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('hm_active_user', JSON.stringify(updatedUser));
   };
 
   const updateCompanySettings = (data: Partial<CompanySettings>) => {
@@ -202,6 +202,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     return `${formattedNumber}${settings.currencySymbol}`;
   };
+
+  // Prevent rendering until session check is complete to avoid redirect loop on refresh
+  if (loading) {
+    return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+            <Loader2 size={40} className="text-indigo-600 animate-spin" />
+            <p className="mt-4 text-sm font-medium text-slate-500 animate-pulse">Initializing System...</p>
+        </div>
+    );
+  }
 
   return (
     <AuthContext.Provider value={{ 

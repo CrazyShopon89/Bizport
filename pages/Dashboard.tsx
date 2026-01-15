@@ -172,7 +172,7 @@ const Dashboard: React.FC = () => {
           colorClass="bg-indigo-50 text-indigo-600"
           action={
             <select 
-                className="text-[10px] bg-transparent text-slate-400 font-bold uppercase cursor-pointer outline-none hover:text-indigo-600 transition-colors"
+                className="text-xs bg-transparent text-slate-400 font-bold uppercase cursor-pointer outline-none hover:text-indigo-600 transition-colors"
                 value={revTimeFilter}
                 onChange={(e) => setRevTimeFilter(e.target.value as TimeFilter)}
             >
@@ -242,7 +242,19 @@ const Dashboard: React.FC = () => {
                 <YAxis axisLine={false} tickLine={false} tickFormatter={(val) => `${val/1000}k`} tick={{fontSize: 12, fill: '#94a3b8'}} />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '8px 12px', fontSize: '12px' }}
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="bg-white p-3 border border-slate-100 shadow-lg rounded-xl min-w-[120px]">
+                          <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">{label}</p>
+                          <p className="text-lg font-bold text-indigo-600">
+                            {formatCurrency(payload[0].value as number)}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
                 <Bar dataKey="amount" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={30} />
               </BarChart>
@@ -278,7 +290,7 @@ const Dashboard: React.FC = () => {
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-8">
                 <div className="text-center">
                     <span className="text-3xl font-extrabold text-slate-800">{clients.length + domains.length}</span>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Total Items</p>
+                    <p className="text-xs text-slate-400 uppercase font-bold tracking-wider">Total Items</p>
                 </div>
             </div>
           </div>
@@ -321,7 +333,7 @@ const Dashboard: React.FC = () => {
                    <Clock size={20} className="text-amber-500" />
                    Expiring Soon
                 </h3>
-                <span className="text-[10px] font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-full border border-amber-100">
+                <span className="text-xs font-bold bg-amber-50 text-amber-700 px-2 py-1 rounded-full border border-amber-100">
                    {dashboardLists.expiring.length} ITEMS
                 </span>
              </div>
@@ -354,7 +366,7 @@ const Dashboard: React.FC = () => {
                    <Globe size={20} className="text-blue-500" />
                    Recently Added
                 </h3>
-                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-100">
+                <span className="text-xs font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded-full border border-blue-100">
                    {dashboardLists.recent.length} NEW
                 </span>
              </div>
@@ -376,7 +388,7 @@ const Dashboard: React.FC = () => {
                                     <p className="text-xs text-slate-500">Reg: {item.created}</p>
                                 </div>
                             </div>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                            <span className="text-xs font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded uppercase tracking-wide">
                                 NEW
                             </span>
                         </div>
@@ -392,7 +404,7 @@ const Dashboard: React.FC = () => {
                    <AlertTriangle size={20} className="text-rose-500" />
                    Overdue Renewals
                 </h3>
-                <span className="text-[10px] font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-full border border-rose-100">
+                <span className="text-xs font-bold bg-rose-50 text-rose-700 px-2 py-1 rounded-full border border-rose-100">
                    {dashboardLists.overdue.length} ALERT
                 </span>
              </div>

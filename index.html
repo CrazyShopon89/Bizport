@@ -86,8 +86,14 @@
       
       /* Apply dynamic border width to buttons using standard classes */
       button[class*="bg-indigo-600"], 
-      button[class*="bg-primary"] {
+      button[class*="bg-primary"],
+      button[class*="border"] {
         border-width: var(--ui-btn-border);
+      }
+
+      /* Specific override for primary buttons to keep the light inner border effect if needed */
+      button[class*="bg-indigo-600"], 
+      button[class*="bg-primary"] {
         border-color: rgba(255,255,255,0.2); 
       }
 
