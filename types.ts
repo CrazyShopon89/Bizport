@@ -59,6 +59,22 @@ export interface EmailJSConfig {
   publicKey: string;
 }
 
+export interface SignatureConfig {
+  enabled: boolean;
+  fullName: string;
+  jobTitle: string;
+  companyName: string;
+  phone: string;
+  website: string;
+  email: string;
+  address: string;
+  photoUrl: string;
+  facebookUrl?: string;
+  linkedinUrl?: string;
+  twitterUrl?: string;
+  instagramUrl?: string;
+}
+
 export interface CompanySettings {
   companyName: string;
   logoUrl: string;
@@ -85,7 +101,10 @@ export interface CompanySettings {
   defaultHostingRenewalPeriod?: string;
   defaultDomainRenewalPeriod?: string;
   renewalNotificationDays?: number; // Days before renewal to generate invoice/notification
-  emailSignature?: string; // Custom email signature
+  
+  emailSignature?: string; // Legacy text signature (kept for backward compat)
+  signatureConfig?: SignatureConfig; // New structured signature
+  
   emailProvider: EmailProvider;
   emailJsConfig: EmailJSConfig;
   
@@ -102,6 +121,15 @@ export interface SMTPSettings {
   password: string; // Stored encrypted/obfuscated
   fromName: string;
   fromEmail: string;
+}
+
+export interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  description: string;
+  placeholders: string[];
 }
 
 export interface Client {

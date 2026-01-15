@@ -1,4 +1,4 @@
-import { Client, DomainClient, User, CompanySettings, Status, PaymentStatus, Invoice, SMTPSettings, AppNotification, DataFields, EmailLog, BackupMeta } from '../types';
+import { Client, DomainClient, User, CompanySettings, Status, PaymentStatus, Invoice, SMTPSettings, AppNotification, DataFields, EmailLog, BackupMeta, EmailTemplate, SignatureConfig } from '../types';
 import { SecurityService } from './security';
 
 const STORAGE_KEYS = {
@@ -11,7 +11,23 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'hm_notifications_db',
   DATA_FIELDS: 'hm_data_fields_db',
   EMAIL_LOGS: 'hm_email_logs_db',
-  BACKUP_HISTORY: 'hm_backup_history_db'
+  BACKUP_HISTORY: 'hm_backup_history_db',
+  TEMPLATES: 'hm_email_templates_db'
+};
+
+const DEFAULT_SIGNATURE: SignatureConfig = {
+  enabled: true,
+  fullName: 'Md Abdul Kader',
+  jobTitle: 'Sr. Web Developer',
+  companyName: 'Bizcope Digital Ltd.',
+  phone: '+8801324738611',
+  website: 'www.bizcope.com',
+  email: 'abdulkader@bizcope.com',
+  address: '89/7 Gopibag, Dhaka-1203',
+  photoUrl: 'https://ui-avatars.com/api/?name=Abdul+Kader&background=0f172a&color=fff',
+  facebookUrl: 'https://facebook.com',
+  linkedinUrl: 'https://linkedin.com',
+  twitterUrl: 'https://twitter.com'
 };
 
 const DEFAULT_SETTINGS: CompanySettings = {
@@ -38,7 +54,8 @@ const DEFAULT_SETTINGS: CompanySettings = {
   defaultHostingRenewalPeriod: '1 Year',
   defaultDomainRenewalPeriod: '1 Year',
   renewalNotificationDays: 7,
-  emailSignature: 'Best regards,\nThe HostMaster Team',
+  emailSignature: '', // Legacy
+  signatureConfig: DEFAULT_SIGNATURE,
   emailProvider: 'simulation',
   emailJsConfig: {
     serviceId: '',
@@ -65,6 +82,57 @@ const DEFAULT_DATA_FIELDS: DataFields = {
   paymentMethods: ['Bank Transfer', 'Bkash', 'Cash', 'Cheque', 'Credit Card', 'PayPal'],
   invoiceStatuses: ['Draft', 'Sent', 'Paid', 'Cancelled', 'Not Sent']
 };
+
+const DEFAULT_TEMPLATES: EmailTemplate[] = [
+  {
+    id: 'invoice_ready',
+    name: 'Invoice Ready',
+    description: 'Your Invoice #{invoice_id} is Ready',
+    subject: 'Your Invoice #{invoice_id} is Ready',
+    body: `Hi {client_name},
+
+Your invoice #{invoice_id} for "{service_name}" is now available. 
+Please find the details below.
+
+Total Amount Due: {amount}
+Due Date: {due_date}
+
+Please login to your client portal to make a payment.
+
+Thank you for choosing us.`,
+    placeholders: ['{client_name}', '{invoice_id}', '{service_name}', '{amount}', '{due_date}']
+  },
+  {
+    id: 'renewal_reminder',
+    name: 'Renewal Reminder',
+    description: 'Hosting/Domain Renewal Reminder',
+    subject: 'Renewal Reminder: {service_name} Expires Soon',
+    body: `Hi {client_name},
+
+This is a friendly reminder that your service "{service_name}" is set to expire on {due_date}.
+
+To ensure uninterrupted service, please review the attached invoice #{invoice_id} and process the payment of {amount} before the due date.
+
+If you have already made a payment, please disregard this notice.`,
+    placeholders: ['{client_name}', '{service_name}', '{due_date}', '{invoice_id}', '{amount}']
+  },
+  {
+    id: 'overdue_notice',
+    name: 'Overdue Notice',
+    description: 'Invoice #{invoice_id} Overdue Notice',
+    subject: 'URGENT: Invoice #{invoice_id} is Overdue',
+    body: `Hi {client_name},
+
+We noticed that payment for invoice #{invoice_id} was due on {due_date} and is now overdue.
+
+Outstanding Amount: {amount}
+
+Please arrange payment immediately to avoid potential service suspension.
+
+If you need assistance, simply reply to this email.`,
+    placeholders: ['{client_name}', '{invoice_id}', '{due_date}', '{amount}']
+  }
+];
 
 export const DB = {
   init: () => {
@@ -149,6 +217,11 @@ export const DB = {
       };
       localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([welcomeNotification]));
     }
+
+    // Initialize Templates
+    if (!localStorage.getItem(STORAGE_KEYS.TEMPLATES)) {
+      localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(DEFAULT_TEMPLATES));
+    }
   },
 
   // --- BACKUP & RESTORE ---
@@ -164,7 +237,8 @@ export const DB = {
     const CRITICAL_KEYS = [
         STORAGE_KEYS.USERS, STORAGE_KEYS.CLIENTS, 
         STORAGE_KEYS.DOMAINS, STORAGE_KEYS.SETTINGS, 
-        STORAGE_KEYS.INVOICES, STORAGE_KEYS.DATA_FIELDS
+        STORAGE_KEYS.INVOICES, STORAGE_KEYS.DATA_FIELDS,
+        STORAGE_KEYS.TEMPLATES
     ];
 
     CRITICAL_KEYS.forEach(key => {
@@ -472,17 +546,37 @@ export const DB = {
     localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify([]));
   },
 
+  // --- TEMPLATE OPERATIONS ---
+  getTemplates: (): EmailTemplate[] => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.TEMPLATES) || '[]');
+    } catch { return DEFAULT_TEMPLATES; }
+  },
+
+  saveTemplate: (template: EmailTemplate) => {
+    const templates = DB.getTemplates();
+    const index = templates.findIndex(t => t.id === template.id);
+    if (index !== -1) {
+      templates[index] = template;
+    } else {
+      templates.push(template);
+    }
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+  },
+
   // --- SETTINGS OPERATIONS ---
   getSettings: (): CompanySettings => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || JSON.stringify(DEFAULT_SETTINGS));
       // Merge with defaults to ensure new fields exist
       const merged = { ...DEFAULT_SETTINGS, ...stored };
-      // Ensure nested objects like emailJsConfig are merged correctly if missing in storage
+      
+      // Ensure signatureConfig exists
+      if (!merged.signatureConfig) merged.signatureConfig = DEFAULT_SIGNATURE;
       if (!merged.emailJsConfig) merged.emailJsConfig = DEFAULT_SETTINGS.emailJsConfig;
       if (!merged.emailProvider) merged.emailProvider = DEFAULT_SETTINGS.emailProvider;
       
-      // Ensure new UI fields exist if loading from old DB
+      // Ensure new UI fields exist
       if (!merged.primaryHoverColor) merged.primaryHoverColor = DEFAULT_SETTINGS.primaryHoverColor;
       if (!merged.disabledColor) merged.disabledColor = DEFAULT_SETTINGS.disabledColor;
       if (!merged.fontScale) merged.fontScale = DEFAULT_SETTINGS.fontScale;

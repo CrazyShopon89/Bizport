@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { DollarSign, Euro, PoundSterling, IndianRupee, JapaneseYen, AlertCircle, CheckCircle, Clock, Globe, Sparkles, Loader2, ArrowUpRight, Plus, AlertTriangle } from 'lucide-react';
+import { DollarSign, Euro, PoundSterling, IndianRupee, JapaneseYen, AlertCircle, CheckCircle, Clock, Globe, Sparkles, Loader2, ArrowUpRight, Plus, AlertTriangle, Wallet } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
@@ -136,17 +136,6 @@ const Dashboard: React.FC = () => {
     return { expiring, overdue, recent };
   }, [clients, domains]);
 
-  const getCurrencyIcon = () => {
-    const iconProps = { size: 22, className: "text-indigo-600" };
-    switch (settings.currency) {
-      case 'EUR': return <Euro {...iconProps} />;
-      case 'GBP': return <PoundSterling {...iconProps} />;
-      case 'INR': return <IndianRupee {...iconProps} />;
-      case 'JPY': return <JapaneseYen {...iconProps} />;
-      default: return <DollarSign {...iconProps} />;
-    }
-  };
-
   const handleAiAnalysis = async () => {
     setIsAnalyzing(true);
     const result = await analyzeClientData(clients, domains);
@@ -177,7 +166,7 @@ const Dashboard: React.FC = () => {
           label="Total Revenue" 
           value={formatCurrency(revenueStats.total)}
           subValue={`${revenueStats.count} Paid Invoices`}
-          icon={getCurrencyIcon()}
+          icon={<Wallet size={22} className="text-indigo-600" />}
           trend="up"
           trendValue={revTimeFilter === 'year' ? 'This Year' : 'This Month'}
           colorClass="bg-indigo-50 text-indigo-600"

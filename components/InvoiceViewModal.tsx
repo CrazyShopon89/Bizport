@@ -45,7 +45,7 @@ const InvoiceViewModal: React.FC<InvoiceViewModalProps> = ({ invoice, isOpen, on
         const result = await EmailService.sendInvoiceEmail(invoice, pdfDataUri);
         
         if (result.success) {
-            setEmailStatus({ type: 'success', message: 'Sent successfully with PDF' });
+            setEmailStatus({ type: 'success', message: 'Sent successfully' });
         }
     } catch (error: any) {
         console.error("Email send failed:", error);
