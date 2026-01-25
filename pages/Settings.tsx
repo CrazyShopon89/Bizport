@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X, Calendar, Bell, AlertTriangle, Zap, Terminal, Send, Layout, MousePointer, Ban, Globe, Shield, Lock, FileText, ChevronRight, User, Phone, MapPin, Link as LinkIcon, Facebook, Linkedin, Twitter, Instagram, Search, Download, CreditCard, Tag, Sliders, Eye, EyeOff } from 'lucide-react';
+import { Building2, Palette, Type, Save, DollarSign, Mail, Server, Upload, Trash2, Image, Database, List, Plus, X, Calendar, Bell, AlertTriangle, Zap, Terminal, Send, Layout, MousePointer, Ban, Globe, Shield, Lock, FileText, ChevronRight, User, Phone, MapPin, Link as LinkIcon, Facebook, Linkedin, Twitter, Instagram, Search, Download, CreditCard, Tag, Sliders, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { DB } from '../services/db';
 import { SMTPSettings, DataFields, COUNTRY_CODES, EmailJSConfig, EmailProvider, EmailTemplate, SignatureConfig } from '../types';
 import { EmailService } from '../services/emailService';
@@ -56,87 +56,44 @@ export const SettingsForm: React.FC = () => {
     const user = smtpData.username || 'noreply@yourdomain.com';
     const pass = smtpData.password || 'EMAIL_PASSWORD';
     const port = smtpData.port || '465';
-    // Map UI selection to PHPMailer constant
-    const encryption = smtpData.encryption === 'TLS' 
-        ? 'PHPMailer::ENCRYPTION_STARTTLS' 
-        : 'PHPMailer::ENCRYPTION_SMTPS';
+    // Logic: If port 465, usually SSL. If 587, usually TLS.
+    const encryption = smtpData.encryption; // 'SSL' or 'TLS'
     
     const fromName = smtpData.fromName || 'System';
     const fromEmail = smtpData.fromEmail || user;
 
     const phpContent = `<?php
 /**
- * HostMaster Pro - Universal Mail API
- * Designed to solve "Library Not Found" issues by checking multiple paths.
+ * HostMaster Pro - Standalone Mail API (MicroMailer V2)
+ * 
+ * INSTRUCTIONS:
+ * 1. Upload this file to your server (e.g. public_html/mail_api_standalone.php).
+ * 2. That's it! No other folders or libraries (PHPMailer/Vendor) are needed.
+ * 3. Update the URL in your Dashboard Settings to point to this file.
  */
 
-use PHPMailer\\PHPMailer\\PHPMailer;
-use PHPMailer\\PHPMailer\\Exception;
-
-// 1. ROBUST LIBRARY LOADING
-// We check common Composer paths AND a manual "PHPMailer" folder fallback.
-$autoloadPaths = [
-    __DIR__ . '/vendor/autoload.php',           // Same dir
-    __DIR__ . '/../vendor/autoload.php',        // Parent dir
-    __DIR__ . '/../../vendor/autoload.php',     // Grandparent dir
-    $_SERVER['DOCUMENT_ROOT'] . '/vendor/autoload.php' // Web root
-];
-
-$libFound = false;
-
-// Try Composer Autoloaders
-foreach ($autoloadPaths as $path) {
-    if (file_exists($path)) {
-        require_once $path;
-        $libFound = true;
-        break;
-    }
-}
-
-// Fallback: Check for Manual Upload of PHPMailer source files
-// If user uploaded the 'src' folder as 'PHPMailer' in the same directory
-if (!$libFound) {
-    $manualPath = __DIR__ . '/PHPMailer/';
-    if (file_exists($manualPath . 'PHPMailer.php')) {
-        require_once $manualPath . 'Exception.php';
-        require_once $manualPath . 'PHPMailer.php';
-        require_once $manualPath . 'SMTP.php';
-        $libFound = true;
-    }
-}
-
-// 2. CONFIGURATION & HEADERS
+// 1. CONFIGURATION & HEADERS
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 header("Content-Type: application/json");
-
-// Exit early if library still missing
-if (!$libFound) {
-    http_response_code(500);
-    echo json_encode([
-        "success" => false, 
-        "message" => "PHPMailer library not found. Fix: 1) Run 'composer require phpmailer/phpmailer' OR 2) Upload PHPMailer 'src' folder renamed to 'PHPMailer' next to this file."
-    ]);
-    exit;
-}
 
 // Handle Preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit(0);
 }
 
-// 3. Enforce POST Request
+// 2. Enforce POST Request
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         "success" => true,
-        "message" => "API is active. Please use POST request to send emails.",
+        "message" => "MicroMailer API is active. Please use POST request.",
         "details" => null
     ]);
     exit;
 }
 
-// 4. Parse JSON Body
+// 3. Parse JSON Body
 $input = file_get_contents("php://input");
 $data = json_decode($input, true);
 
@@ -149,41 +106,128 @@ if (empty($data['to']) || empty($data['subject']) || empty($data['html'])) {
     exit;
 }
 
-$mail = new PHPMailer(true);
+// 4. MICRO MAILER CLASS (Internal SMTP Engine)
+class MicroMailer {
+    private $host;
+    private $port;
+    private $user;
+    private $pass;
+    private $encryption;
+    private $socket;
+    private $logs = [];
 
+    public function __construct($host, $port, $user, $pass, $encryption) {
+        $this->host = $host;
+        $this->port = $port;
+        $this->user = $user;
+        $this->pass = $pass;
+        $this->encryption = $encryption;
+    }
+
+    private function log($msg) {
+        $this->logs[] = $msg;
+    }
+
+    private function getResponse() {
+        $response = "";
+        while($str = fgets($this->socket, 515)) {
+            $response .= $str;
+            if(substr($str, 3, 1) == " ") break;
+        }
+        return $response;
+    }
+
+    private function sendCmd($cmd) {
+        fputs($this->socket, $cmd . "\\r\\n");
+        return $this->getResponse();
+    }
+
+    public function send($to, $subject, $body, $fromEmail, $fromName) {
+        $hostPrefix = ($this->encryption === 'SSL' || $this->port == 465) ? "ssl://" : "";
+        $connectHost = $hostPrefix . $this->host;
+        
+        // Timeout 30s
+        $this->socket = stream_socket_client($connectHost . ":" . $this->port, $errno, $errstr, 30);
+        
+        if (!$this->socket) {
+            return ['success' => false, 'message' => "Connection failed: $errstr ($errno)"];
+        }
+
+        $this->getResponse(); // Banner
+
+        $this->sendCmd("EHLO " . $_SERVER['SERVER_NAME']);
+
+        // STARTTLS if needed (usually port 587)
+        if ($this->encryption === 'TLS' || $this->port == 587) {
+            $this->sendCmd("STARTTLS");
+            if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                return ['success' => false, 'message' => "TLS Handshake failed"];
+            }
+            $this->sendCmd("EHLO " . $_SERVER['SERVER_NAME']);
+        }
+
+        $this->sendCmd("AUTH LOGIN");
+        $this->sendCmd(base64_encode($this->user));
+        
+        // Send Password and check response immediately for authentication failure
+        $passResp = $this->sendCmd(base64_encode($this->pass));
+        if (strpos($passResp, '235') === false) {
+             fclose($this->socket);
+             return ['success' => false, 'message' => "Authentication failed. Check username/password."];
+        }
+
+        $this->sendCmd("MAIL FROM: <$fromEmail>");
+        $this->sendCmd("RCPT TO: <$to>");
+        $this->sendCmd("DATA");
+
+        // Headers
+        $headers  = "MIME-Version: 1.0\\r\\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\\r\\n";
+        $headers .= "From: $fromName <$fromEmail>\\r\\n";
+        $headers .= "To: $to\\r\\n";
+        $headers .= "Subject: $subject\\r\\n";
+        $headers .= "Date: " . date("r") . "\\r\\n";
+        $headers .= "X-Mailer: HostMaster-MicroMailer-Standalone\\r\\n";
+
+        // Body
+        $emailContent = "$headers\\r\\n$body\\r\\n.\\r\\n";
+        $this->sendCmd($emailContent);
+        
+        $this->sendCmd("QUIT");
+        fclose($this->socket);
+
+        return ['success' => true];
+    }
+}
+
+// 5. EXECUTE
 try {
-    // 5. Server Settings (Injected from Dashboard)
-    $mail->isSMTP();
-    $mail->Host       = '${host}';
-    $mail->SMTPAuth   = true;
-    $mail->Username   = '${user}';
-    $mail->Password   = '${pass}';
-    $mail->SMTPSecure = ${encryption};
-    $mail->Port       = ${port};
-
-    // 6. Sender & Recipient
-    // Use injected From Name/Email, but allow override from request if secure
-    $reqFromEmail = isset($data['fromEmail']) ? $data['fromEmail'] : '${fromEmail}';
-    $reqFromName = isset($data['fromName']) ? $data['fromName'] : '${fromName}';
+    // Inject Credentials
+    $host = '${host}';
+    $user = '${user}';
+    $pass = '${pass}';
+    $port = ${port}; // int
+    $encryption = '${encryption}'; // 'SSL' or 'TLS'
     
-    $mail->setFrom($reqFromEmail, $reqFromName);
-    $mail->addAddress($data['to']);
-    $mail->Subject = $data['subject'];
-    $mail->Body    = $data['html'];
-    $mail->AltBody = strip_tags($data['html']);
-    $mail->isHTML(true);
+    // Overrides from Request (if system sends different 'from' details)
+    $reqFromEmail = isset($data['fromEmail']) && !empty($data['fromEmail']) ? $data['fromEmail'] : '${fromEmail}';
+    $reqFromName = isset($data['fromName']) && !empty($data['fromName']) ? $data['fromName'] : '${fromName}';
 
-    $mail->send();
+    $mailer = new MicroMailer($host, $port, $user, $pass, $encryption);
+    $result = $mailer->send($data['to'], $data['subject'], $data['html'], $reqFromEmail, $reqFromName);
 
-    echo json_encode([
-        "success" => true,
-        "message" => "Email sent successfully"
-    ]);
+    if ($result['success']) {
+        echo json_encode(['success' => true, 'message' => 'Email sent successfully']);
+    } else {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => $result['message']]);
+    }
+
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
         "success" => false,
-        "message" => "Mailer Error: " . $mail->ErrorInfo
+        "message" => "Script Error: " . $e->getMessage()
     ]);
 }
 ?>`;
@@ -192,7 +236,7 @@ try {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'mail_api.php';
+    a.download = 'mail_api_standalone.php';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -468,29 +512,29 @@ try {
                             value={backendUrl} 
                             onChange={(e) => setBackendUrl(e.target.value)}
                             className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none" 
-                            placeholder="https://your-domain.com/mail_api.php"
+                            placeholder="https://your-domain.com/mail_api_standalone.php"
                         />
                     </div>
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-2 gap-2">
                         <p className="text-xs text-slate-500">
-                            <strong>New:</strong> The updated script now fixes "Library Not Found" errors automatically.
+                            <span className="flex items-center gap-1"><CheckCircle size={12} className="text-green-500"/> <strong>Easy Fix:</strong> Use the button below to get the standalone script.</span>
                         </p>
                         <div className="flex gap-2">
                             <button 
                                 type="button" 
                                 onClick={handleDownloadPhpScript}
-                                className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium hover:underline bg-indigo-50 px-2 py-1 rounded"
+                                className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium hover:underline bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-100"
                             >
-                                <Download size={12} /> Download PHP Script
+                                <Download size={14} /> Download Standalone Script (No Folders Required)
                             </button>
                             <button
                                 type="button"
                                 onClick={handleTestEmail}
                                 disabled={testingEmail || !backendUrl}
-                                className="text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-800 font-medium hover:underline bg-emerald-50 px-2 py-1 rounded disabled:opacity-50"
+                                className="text-xs flex items-center gap-1 text-emerald-600 hover:text-emerald-800 font-medium hover:underline bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 disabled:opacity-50"
                             >
                                 {testingEmail ? 'Sending...' : 'Test Connection'}
-                                <Send size={12} />
+                                <Send size={14} />
                             </button>
                         </div>
                     </div>
@@ -500,10 +544,10 @@ try {
                 <div className="border-t border-slate-100 pt-6">
                     <div className="flex items-center gap-2 mb-4">
                         <Server size={16} className="text-slate-400" />
-                        <h3 className="text-sm font-bold text-slate-700">SMTP Settings (For PHP Script)</h3>
+                        <h3 className="text-sm font-bold text-slate-700">SMTP Settings (Baked into Script)</h3>
                     </div>
                     <p className="text-xs text-slate-500 mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                        Fill in these details to generate a pre-configured PHP script. The script uses <strong>PHPMailer</strong>.
+                        Fill in these details to generate a <strong>self-contained PHP script</strong>. No external libraries or folders are needed.
                     </p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -524,7 +568,7 @@ try {
                                 value={smtpData.port}
                                 onChange={(e) => setSmtpData({...smtpData, port: e.target.value})}
                                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:border-primary outline-none"
-                                placeholder="465"
+                                placeholder="465 (SSL) or 587 (TLS)"
                             />
                         </div>
                         <div>
