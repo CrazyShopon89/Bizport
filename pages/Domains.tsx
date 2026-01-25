@@ -131,13 +131,14 @@ const Domains: React.FC = () => {
       paymentStatus: 'Unpaid',
       status: 'Pending',
       invoiceNumber: '', // Start empty
-      invoiceDate: ''
+      invoiceDate: '',
+      notes: ''
     };
     setEditingDomain(newDomain);
   };
 
   const handleExportCSV = () => {
-    const headers = ['Sl.', 'Client Name', 'Domain', 'Email', 'Purchase Date', 'Renewal Date', 'Validation Date', 'Amount', 'Payment Method', 'Payment Status', 'Status'];
+    const headers = ['Sl.', 'Client Name', 'Domain', 'Email', 'Purchase Date', 'Renewal Date', 'Validation Date', 'Amount', 'Payment Method', 'Payment Status', 'Status', 'Notes'];
     
     const csvContent = [
       headers.join(','),
@@ -152,7 +153,8 @@ const Domains: React.FC = () => {
         d.amount,
         d.paymentMethod,
         d.paymentStatus,
-        d.status
+        d.status,
+        `"${d.notes || ''}"`
       ].join(','))
     ].join('\n');
 
@@ -348,74 +350,92 @@ const Domains: React.FC = () => {
                   {expandedClientId === domain.id && (
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <td colSpan={10} className="p-0">
-                        <div className="p-4 sm:p-6 ml-8 border-l-2 border-slate-300 my-2 animate-fade-in">
-                           <div className="flex items-center gap-2 mb-4">
-                              <FileText size={18} className="text-slate-500" />
-                              <h4 className="font-bold text-slate-800">Recent Invoice History</h4>
-                           </div>
+                        <div className="py-4 pl-8 border-l-2 border-indigo-200 my-2 grid grid-cols-1 lg:grid-cols-2 gap-6 mx-4 animate-fade-in">
                            
-                           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm max-w-4xl">
-                              <table className="w-full text-left text-sm">
-                                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
-                                    <tr>
-                                       <th className="p-3">Invoice #</th>
-                                       <th className="p-3">Issue Date</th>
-                                       <th className="p-3">Due Date</th>
-                                       <th className="p-3">Amount</th>
-                                       <th className="p-3">Status</th>
-                                       <th className="p-3 text-right">Action</th>
-                                    </tr>
-                                 </thead>
-                                 <tbody className="divide-y divide-slate-100">
-                                    {getClientInvoices(domain.id).length === 0 ? (
-                                       <tr>
-                                          <td colSpan={6} className="p-4 text-center text-slate-400 italic">
-                                             No invoice history found for this domain.
-                                          </td>
-                                       </tr>
-                                    ) : (
-                                       getClientInvoices(domain.id).map(inv => (
-                                          <tr key={inv.id} className="hover:bg-slate-50">
-                                             <td className="p-3 font-mono text-slate-700">{inv.invoiceNumber}</td>
-                                             <td className="p-3 text-slate-600">{inv.issueDate}</td>
-                                             <td className="p-3 text-slate-600">{inv.dueDate}</td>
-                                             <td className="p-3 font-medium">{formatCurrency(inv.amount)}</td>
-                                             <td className="p-3">
-                                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                                   inv.status === 'Paid' ? 'bg-green-100 text-green-700' :
-                                                   inv.status === 'Overdue' ? 'bg-red-100 text-red-700' :
-                                                   'bg-yellow-100 text-yellow-700'
-                                                }`}>
-                                                   {inv.status}
-                                                </span>
-                                             </td>
-                                             <td className="p-3 text-right">
-                                                <div className="flex justify-end gap-2">
-                                                   <button 
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setViewInvoice(inv);
-                                                      }}
-                                                      className="text-slate-400 hover:text-slate-600 p-1" 
-                                                      title="Preview"
-                                                   >
-                                                      <Eye size={16} />
-                                                   </button>
-                                                   <button 
-                                                      onClick={(e) => handleDownloadInvoice(e, inv)}
-                                                      className="text-primary hover:text-indigo-700 p-1" 
-                                                      title="Download PDF"
-                                                   >
-                                                      <Download size={16} />
-                                                   </button>
-                                                </div>
-                                             </td>
-                                          </tr>
-                                       ))
-                                    )}
-                                 </tbody>
-                              </table>
+                           {/* Invoices Section */}
+                           <div>
+                               <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
+                                  <FileText size={16} className="text-indigo-500" />
+                                  <span>Recent Invoice History</span>
+                               </div>
+                               
+                               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm max-w-4xl h-[200px] overflow-y-auto custom-scrollbar">
+                                  <table className="w-full text-left text-sm">
+                                     <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200 sticky top-0">
+                                        <tr>
+                                           <th className="p-3">Invoice #</th>
+                                           <th className="p-3">Date</th>
+                                           <th className="p-3">Amount</th>
+                                           <th className="p-3">Status</th>
+                                           <th className="p-3 text-right">Action</th>
+                                        </tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-slate-100">
+                                        {getClientInvoices(domain.id).length === 0 ? (
+                                           <tr>
+                                              <td colSpan={5} className="p-4 text-center text-slate-400 italic">
+                                                 No invoice history found.
+                                              </td>
+                                           </tr>
+                                        ) : (
+                                           getClientInvoices(domain.id).map(inv => (
+                                              <tr key={inv.id} className="hover:bg-slate-50">
+                                                 <td className="p-3 font-mono text-slate-700">{inv.invoiceNumber}</td>
+                                                 <td className="p-3 text-slate-600">{inv.issueDate}</td>
+                                                 <td className="p-3 font-medium">{formatCurrency(inv.amount)}</td>
+                                                 <td className="p-3">
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                                       inv.status === 'Paid' ? 'bg-green-100 text-green-700' :
+                                                       inv.status === 'Overdue' ? 'bg-red-100 text-red-700' :
+                                                       'bg-yellow-100 text-yellow-700'
+                                                    }`}>
+                                                       {inv.status}
+                                                    </span>
+                                                 </td>
+                                                 <td className="p-3 text-right">
+                                                    <div className="flex justify-end gap-2">
+                                                       <button 
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setViewInvoice(inv);
+                                                          }}
+                                                          className="text-slate-400 hover:text-slate-600 p-1" 
+                                                          title="Preview"
+                                                       >
+                                                          <Eye size={16} />
+                                                       </button>
+                                                       <button 
+                                                          onClick={(e) => handleDownloadInvoice(e, inv)}
+                                                          className="text-primary hover:text-indigo-700 p-1" 
+                                                          title="Download PDF"
+                                                       >
+                                                          <Download size={16} />
+                                                       </button>
+                                                    </div>
+                                                 </td>
+                                              </tr>
+                                           ))
+                                        )}
+                                     </tbody>
+                                  </table>
+                               </div>
                            </div>
+
+                           {/* Notes Section */}
+                           <div className="flex flex-col h-full">
+                                <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
+                                    <FileText size={16} className="text-indigo-500" />
+                                    <span>Domain Notes</span>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 text-sm text-slate-600 flex-1 h-[200px] overflow-y-auto custom-scrollbar">
+                                    {domain.notes ? (
+                                        <p className="whitespace-pre-wrap leading-relaxed">{domain.notes}</p>
+                                    ) : (
+                                        <p className="text-slate-400 italic">No notes added for this domain.</p>
+                                    )}
+                                </div>
+                           </div>
+
                         </div>
                       </td>
                     </tr>

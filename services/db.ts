@@ -56,12 +56,11 @@ const DEFAULT_SETTINGS: CompanySettings = {
   renewalNotificationDays: 7,
   emailSignature: '', // Legacy
   signatureConfig: DEFAULT_SIGNATURE,
-  emailProvider: 'simulation',
-  emailJsConfig: {
-    serviceId: '',
-    templateId: '',
-    publicKey: ''
-  },
+  
+  // BACKEND EMAIL DEFAULTS
+  emailProvider: 'backend',
+  backendApiUrl: '', // User must configure this
+  emailJsConfig: { serviceId: '', templateId: '', publicKey: '' }, // Deprecated but present for types
   
   backupSchedule: 'disabled',
   backupRetentionCount: 5,
@@ -186,7 +185,7 @@ export const DB = {
       localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify([]));
     }
 
-    // Initialize SMTP
+    // Initialize SMTP (Legacy storage, kept for migration safety)
     if (!localStorage.getItem(STORAGE_KEYS.SMTP)) {
       localStorage.setItem(STORAGE_KEYS.SMTP, JSON.stringify(DEFAULT_SMTP));
     }
@@ -211,7 +210,7 @@ export const DB = {
       const welcomeNotification: AppNotification = {
         id: 'welcome_1',
         title: 'Welcome to HostMaster Pro',
-        message: 'System initialization complete. You are ready to manage your hosting clients.',
+        message: 'System initialization complete. Configure your Backend Mail API in Settings to enable emails.',
         type: 'system',
         timestamp: new Date().toISOString(),
         isRead: false
@@ -300,18 +299,9 @@ export const DB = {
   },
 
   // --- UTILITY ---
-  /**
-   * Calculates a future date based on a start date and a period string.
-   * Handles date arithmetic safely using UTC to prevent timezone shifts.
-   * @param startDateStr YYYY-MM-DD string
-   * @param period "1 Year", "1 Month", etc.
-   */
   calculateDate: (startDateStr: string, period: string): string => {
     if (!startDateStr) return new Date().toISOString().split('T')[0];
-    
-    // Parse YYYY-MM-DD
     const [y, m, d] = startDateStr.split('-').map(Number);
-    // Create Date in UTC (Month is 0-indexed)
     const date = new Date(Date.UTC(y, m - 1, d));
 
     switch (period) {
@@ -323,60 +313,42 @@ export const DB = {
       case '3 Years': date.setUTCFullYear(date.getUTCFullYear() + 3); break;
       case '5 Years': date.setUTCFullYear(date.getUTCFullYear() + 5); break;
       case '10 Years': date.setUTCFullYear(date.getUTCFullYear() + 10); break;
-      default: date.setUTCFullYear(date.getUTCFullYear() + 1); // Default
+      default: date.setUTCFullYear(date.getUTCFullYear() + 1); 
     }
-
     return date.toISOString().split('T')[0];
   },
 
-  /**
-   * Calculates the next renewal date based on the current year.
-   * If the start date is in the past (e.g., 2018), it projects it to the current/next cycle.
-   */
   calculateNextRenewalDate: (startDateStr: string, period: string): string => {
     if (!startDateStr) return new Date().toISOString().split('T')[0];
-
     const today = new Date();
-    // Create "Today" as UTC YYYY-MM-DD for fair comparison
     const nowUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-
     const [y, m, d] = startDateStr.split('-').map(Number);
-    // Construct start date in UTC
     const start = new Date(Date.UTC(y, m - 1, d));
 
     if (start >= nowUTC) {
-        // If setup/purchase date is in future or today, next renewal is Start + Period
         return DB.calculateDate(startDateStr, period);
     }
 
     let nextDate = new Date(start);
-
     if (period.includes('Year')) {
         const years = parseInt(period) || 1;
         const currentYear = nowUTC.getUTCFullYear();
-        
-        // Project to current year
         nextDate.setUTCFullYear(currentYear);
-        
-        // If projected date is before today, move to next cycle
         if (nextDate < nowUTC) {
             nextDate.setUTCFullYear(currentYear + years);
         }
     } else if (period.includes('Month')) {
         const months = parseInt(period) || 1;
-        // Iterate adding months until date is in the future
         while (nextDate < nowUTC) {
             nextDate.setUTCMonth(nextDate.getUTCMonth() + months);
         }
     } else {
-        // Fallback default 1 year behavior
         const currentYear = nowUTC.getUTCFullYear();
         nextDate.setUTCFullYear(currentYear);
         if (nextDate < nowUTC) {
             nextDate.setUTCFullYear(currentYear + 1);
         }
     }
-
     return nextDate.toISOString().split('T')[0];
   },
 
@@ -388,180 +360,93 @@ export const DB = {
     return `${year}-${month}-${day}`;
   },
 
-  // --- USER OPERATIONS ---
-  getUsers: (): User[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]');
-    } catch { return []; }
-  },
-
-  hasAdmin: (): boolean => {
-    const users = DB.getUsers();
-    return users.some(u => u.role === 'Admin' || u.role === 'Super Admin');
-  },
-
-  findUser: (email: string): User | undefined => {
-    const users = DB.getUsers();
-    return users.find(u => u.email === email);
-  },
-
+  // --- ENTITY OPERATIONS (Unchanged structure, just pass through) ---
+  getUsers: (): User[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS) || '[]'); } catch { return []; } },
+  hasAdmin: (): boolean => DB.getUsers().some(u => u.role === 'Admin' || u.role === 'Super Admin'),
+  findUser: (email: string): User | undefined => DB.getUsers().find(u => u.email === email),
   saveUser: (user: User) => {
     const users = DB.getUsers();
     const index = users.findIndex(u => u.id === user.id);
-    if (index !== -1) {
-      users[index] = user;
-    } else {
-      users.push(user);
-    }
+    if (index !== -1) users[index] = user; else users.push(user);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   },
-
   deleteUser: (id: string) => {
-    let users = DB.getUsers();
-    users = users.filter(u => u.id !== id);
+    const users = DB.getUsers().filter(u => u.id !== id);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   },
 
-  // --- CLIENT OPERATIONS ---
-  getClients: (): Client[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.CLIENTS) || '[]');
-    } catch { return []; }
-  },
-
+  getClients: (): Client[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.CLIENTS) || '[]'); } catch { return []; } },
   saveClient: (client: Client) => {
     const clients = DB.getClients();
     const index = clients.findIndex(c => c.id === client.id);
-    if (index !== -1) {
-      clients[index] = client;
-    } else {
-      clients.push(client);
-    }
+    if (index !== -1) clients[index] = client; else clients.push(client);
     localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
   },
-
   deleteClient: (id: string) => {
-    let clients = DB.getClients();
-    clients = clients.filter(c => c.id !== id);
+    const clients = DB.getClients().filter(c => c.id !== id);
     localStorage.setItem(STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
   },
 
-  // --- DOMAIN OPERATIONS ---
-  getDomains: (): DomainClient[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.DOMAINS) || '[]');
-    } catch { return []; }
-  },
-
+  getDomains: (): DomainClient[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.DOMAINS) || '[]'); } catch { return []; } },
   saveDomain: (domain: DomainClient) => {
     const domains = DB.getDomains();
     const index = domains.findIndex(d => d.id === domain.id);
-    if (index !== -1) {
-      domains[index] = domain;
-    } else {
-      domains.push(domain);
-    }
+    if (index !== -1) domains[index] = domain; else domains.push(domain);
     localStorage.setItem(STORAGE_KEYS.DOMAINS, JSON.stringify(domains));
   },
-
   deleteDomain: (id: string) => {
-    let domains = DB.getDomains();
-    domains = domains.filter(d => d.id !== id);
+    const domains = DB.getDomains().filter(d => d.id !== id);
     localStorage.setItem(STORAGE_KEYS.DOMAINS, JSON.stringify(domains));
   },
 
-  // --- INVOICE OPERATIONS ---
-  getInvoices: (): Invoice[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]');
-    } catch { return []; }
-  },
-
+  getInvoices: (): Invoice[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.INVOICES) || '[]'); } catch { return []; } },
   saveInvoice: (invoice: Invoice) => {
     const invoices = DB.getInvoices();
     const index = invoices.findIndex(i => i.id === invoice.id);
-    if (index !== -1) {
-      invoices[index] = invoice;
-    } else {
-      invoices.push(invoice);
-    }
+    if (index !== -1) invoices[index] = invoice; else invoices.push(invoice);
     localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(invoices));
   },
-
   deleteInvoice: (id: string) => {
-    let invoices = DB.getInvoices();
-    invoices = invoices.filter(i => i.id !== id);
+    const invoices = DB.getInvoices().filter(i => i.id !== id);
     localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(invoices));
   },
 
-  // --- NOTIFICATION OPERATIONS ---
-  getNotifications: (): AppNotification[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS) || '[]');
-    } catch { return []; }
-  },
-
+  getNotifications: (): AppNotification[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS) || '[]'); } catch { return []; } },
   saveNotification: (notification: AppNotification) => {
     const notifications = DB.getNotifications();
     notifications.unshift(notification); 
     if (notifications.length > 50) notifications.pop();
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   },
-
   markNotificationRead: (id: string) => {
     const notifications = DB.getNotifications();
     const index = notifications.findIndex(n => n.id === id);
-    if (index !== -1) {
-      notifications[index].isRead = true;
-      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
-    }
+    if (index !== -1) { notifications[index].isRead = true; localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications)); }
   },
-
   markAllNotificationsRead: () => {
     const notifications = DB.getNotifications();
     const updated = notifications.map(n => ({ ...n, isRead: true }));
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(updated));
   },
-
   deleteNotification: (id: string) => {
-    let notifications = DB.getNotifications();
-    notifications = notifications.filter(n => n.id !== id);
+    const notifications = DB.getNotifications().filter(n => n.id !== id);
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications));
   },
 
-  // --- EMAIL LOGS OPERATIONS ---
-  getEmailLogs: (): EmailLog[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.EMAIL_LOGS) || '[]');
-    } catch { return []; }
-  },
-
+  getEmailLogs: (): EmailLog[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.EMAIL_LOGS) || '[]'); } catch { return []; } },
   saveEmailLog: (log: EmailLog) => {
     const logs = DB.getEmailLogs();
-    logs.unshift(log); // Add to top
-    if (logs.length > 500) logs.pop(); // Keep last 500
+    logs.unshift(log); 
+    if (logs.length > 500) logs.pop(); 
     localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify(logs));
   },
+  clearEmailLogs: () => localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify([])),
 
-  clearEmailLogs: () => {
-    localStorage.setItem(STORAGE_KEYS.EMAIL_LOGS, JSON.stringify([]));
-  },
-
-  // --- TEMPLATE OPERATIONS ---
-  getTemplates: (): EmailTemplate[] => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.TEMPLATES) || '[]');
-    } catch { return DEFAULT_TEMPLATES; }
-  },
-
+  getTemplates: (): EmailTemplate[] => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.TEMPLATES) || '[]'); } catch { return DEFAULT_TEMPLATES; } },
   saveTemplate: (template: EmailTemplate) => {
     const templates = DB.getTemplates();
     const index = templates.findIndex(t => t.id === template.id);
-    if (index !== -1) {
-      templates[index] = template;
-    } else {
-      templates.push(template);
-    }
+    if (index !== -1) templates[index] = template; else templates.push(template);
     localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
   },
 
@@ -569,13 +454,15 @@ export const DB = {
   getSettings: (): CompanySettings => {
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || JSON.stringify(DEFAULT_SETTINGS));
-      // Merge with defaults to ensure new fields exist
+      // Merge with defaults
       const merged = { ...DEFAULT_SETTINGS, ...stored };
       
       // Ensure signatureConfig exists
       if (!merged.signatureConfig) merged.signatureConfig = DEFAULT_SIGNATURE;
-      if (!merged.emailJsConfig) merged.emailJsConfig = DEFAULT_SETTINGS.emailJsConfig;
-      if (!merged.emailProvider) merged.emailProvider = DEFAULT_SETTINGS.emailProvider;
+      if (!merged.backendApiUrl) merged.backendApiUrl = ''; // Default empty if missing
+      
+      // Always enforce 'backend' provider now
+      merged.emailProvider = 'backend';
       
       // Ensure new UI fields exist
       if (!merged.primaryHoverColor) merged.primaryHoverColor = DEFAULT_SETTINGS.primaryHoverColor;
@@ -584,7 +471,6 @@ export const DB = {
       if (!merged.borderRadius) merged.borderRadius = DEFAULT_SETTINGS.borderRadius;
       if (!merged.buttonBorderWidth) merged.buttonBorderWidth = DEFAULT_SETTINGS.buttonBorderWidth;
       
-      // Ensure SEO setting exists
       if (typeof merged.allowSearchIndexing === 'undefined') {
           merged.allowSearchIndexing = DEFAULT_SETTINGS.allowSearchIndexing;
       }
@@ -597,35 +483,20 @@ export const DB = {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   },
 
-  // --- SMTP OPERATIONS ---
   getSMTPSettings: (): SMTPSettings => {
     try {
       const settings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SMTP) || JSON.stringify(DEFAULT_SMTP));
-      // Decrypt password on retrieval
-      if (settings.password) {
-        settings.password = SecurityService.decryptData(settings.password);
-      }
+      if (settings.password) { settings.password = SecurityService.decryptData(settings.password); }
       return settings;
     } catch { return DEFAULT_SMTP; }
   },
 
   saveSMTPSettings: (settings: SMTPSettings) => {
-    // Encrypt password before storage
     const secureSettings = { ...settings };
-    if (secureSettings.password) {
-      secureSettings.password = SecurityService.encryptData(secureSettings.password);
-    }
+    if (secureSettings.password) { secureSettings.password = SecurityService.encryptData(secureSettings.password); }
     localStorage.setItem(STORAGE_KEYS.SMTP, JSON.stringify(secureSettings));
   },
 
-  // --- DATA FIELDS OPERATIONS ---
-  getDataFields: (): DataFields => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEYS.DATA_FIELDS) || JSON.stringify(DEFAULT_DATA_FIELDS));
-    } catch { return DEFAULT_DATA_FIELDS; }
-  },
-
-  saveDataFields: (fields: DataFields) => {
-    localStorage.setItem(STORAGE_KEYS.DATA_FIELDS, JSON.stringify(fields));
-  }
+  getDataFields: (): DataFields => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS.DATA_FIELDS) || JSON.stringify(DEFAULT_DATA_FIELDS)); } catch { return DEFAULT_DATA_FIELDS; } },
+  saveDataFields: (fields: DataFields) => localStorage.setItem(STORAGE_KEYS.DATA_FIELDS, JSON.stringify(fields))
 };

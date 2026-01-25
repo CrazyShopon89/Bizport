@@ -284,45 +284,62 @@ const Clients: React.FC = () => {
                   {expandedClientId === client.id && (
                     <tr className="bg-slate-50/50">
                         <td colSpan={10} className="px-4 py-0">
-                            <div className="py-4 pl-8 border-l-2 border-indigo-200 my-2">
-                                <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
-                                    <FileText size={16} className="text-indigo-500" />
-                                    <span>Recent Invoices</span>
+                            <div className="py-4 pl-8 border-l-2 border-indigo-200 my-2 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Invoices Section */}
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
+                                        <FileText size={16} className="text-indigo-500" />
+                                        <span>Recent Invoices</span>
+                                    </div>
+                                    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden h-[200px] overflow-y-auto custom-scrollbar">
+                                        <table className="w-full text-xs text-left">
+                                            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0">
+                                                <tr>
+                                                    <th className="px-3 py-2 font-medium">Invoice #</th>
+                                                    <th className="px-3 py-2 font-medium">Date</th>
+                                                    <th className="px-3 py-2 font-medium">Due</th>
+                                                    <th className="px-3 py-2 font-medium">Total</th>
+                                                    <th className="px-3 py-2 font-medium">Status</th>
+                                                    <th className="px-3 py-2 text-right">View</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {invoices.filter(i => i.clientId === client.id).length === 0 ? (
+                                                    <tr><td colSpan={6} className="p-3 text-center text-slate-400">No invoices found.</td></tr>
+                                                ) : (
+                                                    invoices.filter(i => i.clientId === client.id).map(inv => (
+                                                        <tr key={inv.id} className="hover:bg-slate-50">
+                                                            <td className="px-3 py-2 font-mono text-slate-600">{inv.invoiceNumber}</td>
+                                                            <td className="px-3 py-2 text-slate-500">{inv.issueDate}</td>
+                                                            <td className="px-3 py-2 text-slate-500">{inv.dueDate}</td>
+                                                            <td className="px-3 py-2 font-medium text-slate-700">{formatCurrency(inv.amount)}</td>
+                                                            <td className="px-3 py-2">
+                                                                <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${inv.status === 'Paid' ? 'text-green-600 bg-green-50' : 'text-amber-600 bg-amber-50'}`}>{inv.status}</span>
+                                                            </td>
+                                                            <td className="px-3 py-2 text-right">
+                                                                <button onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }} className="text-indigo-600 hover:underline">Open</button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                {/* Simple Inner Table */}
-                                <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden max-w-3xl">
-                                    <table className="w-full text-xs text-left">
-                                        <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                                            <tr>
-                                                <th className="px-3 py-2 font-medium">Invoice #</th>
-                                                <th className="px-3 py-2 font-medium">Date</th>
-                                                <th className="px-3 py-2 font-medium">Due</th>
-                                                <th className="px-3 py-2 font-medium">Total</th>
-                                                <th className="px-3 py-2 font-medium">Status</th>
-                                                <th className="px-3 py-2 text-right">View</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {invoices.filter(i => i.clientId === client.id).length === 0 ? (
-                                                <tr><td colSpan={6} className="p-3 text-center text-slate-400">No invoices found.</td></tr>
-                                            ) : (
-                                                invoices.filter(i => i.clientId === client.id).map(inv => (
-                                                    <tr key={inv.id} className="hover:bg-slate-50">
-                                                        <td className="px-3 py-2 font-mono text-slate-600">{inv.invoiceNumber}</td>
-                                                        <td className="px-3 py-2 text-slate-500">{inv.issueDate}</td>
-                                                        <td className="px-3 py-2 text-slate-500">{inv.dueDate}</td>
-                                                        <td className="px-3 py-2 font-medium text-slate-700">{formatCurrency(inv.amount)}</td>
-                                                        <td className="px-3 py-2">
-                                                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${inv.status === 'Paid' ? 'text-green-600 bg-green-50' : 'text-amber-600 bg-amber-50'}`}>{inv.status}</span>
-                                                        </td>
-                                                        <td className="px-3 py-2 text-right">
-                                                            <button onClick={(e) => { e.stopPropagation(); setViewInvoice(inv); }} className="text-indigo-600 hover:underline">Open</button>
-                                                        </td>
-                                                    </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
+
+                                {/* Notes Section */}
+                                <div className="flex flex-col h-full">
+                                    <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-slate-700">
+                                        <FileText size={16} className="text-indigo-500" />
+                                        <span>Client Notes</span>
+                                    </div>
+                                    <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 text-sm text-slate-600 flex-1 h-[200px] overflow-y-auto custom-scrollbar">
+                                        {client.notes ? (
+                                            <p className="whitespace-pre-wrap leading-relaxed">{client.notes}</p>
+                                        ) : (
+                                            <p className="text-slate-400 italic">No notes added for this client.</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </td>

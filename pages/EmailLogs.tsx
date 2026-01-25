@@ -123,8 +123,8 @@ const EmailLogs: React.FC = () => {
                                     {log.subject}
                                 </td>
                                 <td className="p-3">
-                                    <span className={`flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${log.provider === 'emailjs' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                        {log.provider === 'emailjs' ? <Zap size={10}/> : <Terminal size={10}/>}
+                                    <span className={`flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${(log.provider as string) === 'emailjs' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                        {(log.provider as string) === 'emailjs' ? <Zap size={10}/> : <Terminal size={10}/>}
                                         {log.provider}
                                     </span>
                                 </td>

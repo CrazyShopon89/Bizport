@@ -51,8 +51,10 @@ export interface User {
   lockUntil?: string; // ISO Date string
 }
 
-export type EmailProvider = 'simulation' | 'emailjs';
+// Only backend provider allowed now
+export type EmailProvider = 'backend';
 
+// Legacy config interfaces removed, replaced by specific backend config
 export interface EmailJSConfig {
   serviceId: string;
   templateId: string;
@@ -106,7 +108,8 @@ export interface CompanySettings {
   signatureConfig?: SignatureConfig; // New structured signature
   
   emailProvider: EmailProvider;
-  emailJsConfig: EmailJSConfig;
+  emailJsConfig?: EmailJSConfig; // Kept optional for legacy type compatibility during migration
+  backendApiUrl: string; // The URL to the PHP script
   allowSearchIndexing?: boolean; // New SEO setting
   
   // Backup Config
@@ -154,6 +157,7 @@ export interface Client {
   paymentMethod: string; // Changed to string
   nextRenewalDate: string;
   renewalPeriod?: string; // Specific renewal period for this client
+  notes?: string; // Multi-line notes
 }
 
 export interface DomainClient {
@@ -173,6 +177,7 @@ export interface DomainClient {
   status: string; // Changed to string
   invoiceNumber?: string;
   invoiceDate?: string;
+  notes?: string; // Multi-line notes
 }
 
 export interface Invoice {
@@ -218,7 +223,7 @@ export interface EmailLog {
   recipient: string;
   subject: string;
   status: 'success' | 'failed';
-  provider: 'emailjs' | 'simulation';
+  provider: 'backend';
   error?: string;
 }
 

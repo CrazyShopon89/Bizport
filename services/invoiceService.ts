@@ -392,14 +392,15 @@ export const InvoiceService = {
     const domains = DB.getDomains();
     const users = DB.getUsers();
     
-    // Send to Admins/Managers if client email fails or as internal notification
-    const teamRecipients = users.filter(u => u.role !== 'Team Member').map(u => u.email).filter(Boolean);
+    // NOTIFY EVERYONE: Admins, Managers, AND Team Members
+    const teamRecipients = users.map(u => u.email).filter(Boolean);
 
     let emailsSent = 0;
     const today = new Date();
     today.setHours(0,0,0,0);
 
-    const intervals = [15, 7, 3, 1]; // Reminder days
+    // Added 30 for early warning and 0 for due day
+    const intervals = [30, 15, 7, 3, 1, 0]; 
 
     const processEntity = async (
       id: string, 
@@ -423,7 +424,7 @@ export const InvoiceService = {
       // Key to prevent duplicate emails for the same event
       // e.g. "sent_reminder_hosting_c123_2024-12-31_7" (Sent 7 day reminder for specific due date)
       
-      // 1. Overdue Handling
+      // 1. Overdue Handling (Late)
       if (daysRemaining < 0) {
         if (status !== 'Overdue') {
             updater('Overdue');
@@ -444,7 +445,7 @@ export const InvoiceService = {
                console.error("Failed to send client overdue email", e);
            }
 
-           // Always notify team
+           // Always notify team about overdue items
            await EmailService.sendTeamReminder(
              teamRecipients,
              `OVERDUE ALERT: ${targetName}`,
@@ -457,7 +458,7 @@ export const InvoiceService = {
         return;
       }
 
-      // 2. Standard Reminders
+      // 2. Standard Reminders (Approaching / Due Today)
       if (intervals.includes(daysRemaining)) {
          const logKey = `sent_reminder_${type}_${id}_${dateStr}_${daysRemaining}`;
          
@@ -467,13 +468,20 @@ export const InvoiceService = {
                  await EmailService.sendClientEmail(
                    email,
                    name,
-                   `Renewal Reminder: ${daysRemaining} Days Left - ${targetName}`,
+                   `Renewal Reminder: ${daysRemaining === 0 ? 'Due Today' : `${daysRemaining} Days Left`} - ${targetName}`,
                    `Your service for ${targetName} expires on ${dateStr}. Amount due: ${amount}.`
                  );
              } catch (e) {
                  console.error("Failed to send client reminder", e);
              }
              
+             // NOTIFY TEAM about upcoming/due renewals
+             await EmailService.sendTeamReminder(
+               teamRecipients,
+               `Renewal ${daysRemaining === 0 ? 'Due Today' : 'Upcoming'}: ${name} (${daysRemaining} Days)`,
+               `The ${type} service for ${name} (${targetName}) is ${daysRemaining === 0 ? 'due today' : `expiring in ${daysRemaining} days`}.\nDue Date: ${dateStr}\nAmount: ${amount}\n\nClient has been notified.`
+             );
+
              localStorage.setItem(logKey, 'true');
              emailsSent++;
          }

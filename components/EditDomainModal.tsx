@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, User, Globe, CreditCard, Calendar, Download, AlertCircle } from 'lucide-react';
+import { X, Save, User, Globe, CreditCard, Calendar, Download, AlertCircle, FileText } from 'lucide-react';
 import { DomainClient, COUNTRY_CODES } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { InvoiceService } from '../services/invoiceService';
@@ -57,10 +57,6 @@ const EditDomainModal: React.FC<EditDomainModalProps> = ({ client, isOpen, onClo
          if (nextDate) {
              const d = new Date(nextDate);
              d.setDate(d.getDate() - (settings.renewalNotificationDays || 7));
-             // Ensure this projected invoice date is within the current year or relevant context?
-             // Since 'nextDate' is projected to the current/next cycle, 'invoiceDate' will match that cycle.
-             // This fulfills: "Invoice Date is also automatically updated... based on the current year"
-             // if 'nextRenewalDate' was projected to the current year.
              newFormData.invoiceDate = d.toISOString().split('T')[0];
          }
      }
@@ -339,6 +335,21 @@ const EditDomainModal: React.FC<EditDomainModalProps> = ({ client, isOpen, onClo
                       </button>
                   </div>
                </div>
+            </div>
+
+            {/* Section 4: Notes & Remarks */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+               <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100">
+                  <FileText className="text-primary" size={18} />
+                  <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">Notes & Remarks</h4>
+               </div>
+               <textarea
+                  rows={4}
+                  value={formData.notes || ''}
+                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-primary focus:border-primary outline-none text-sm resize-none"
+                  placeholder="Add important notes about this domain..."
+               />
             </div>
 
           </form>
